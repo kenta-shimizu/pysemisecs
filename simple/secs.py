@@ -1,9 +1,9 @@
+import re
+import concurrent.futures
+import threading
+import socket
 import struct
 import os
-import concurrent.futures
-import socket
-import re
-import threading
 
 
 class Secs2BodyParseError(Exception):
@@ -451,7 +451,7 @@ class SmlParser:
         """parse from SML to Tuple
 
         Args:
-            sml_str (str): SML string
+            sml_str (str): SML string.
 
         Raises:
             Secs2BodySmlParseError: raise if Secs2body parse failed.
@@ -1487,25 +1487,88 @@ class AbstractSecsCommunicator:
         self.close()
 
     def send(self, strm, func, wbit, secs2body=None):
+        """Send primary message
+
+        Args:
+            strm (int): Stream-Number.
+            func (int): Function-Number.
+            wbit (bool: W-Bit.
+            Secs2Body (Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
+
+        Raises:
+            SecsCommunicatorError: raise if communicator not opened.
+            SecsSendMessageError: raise if send failed.
+            SecsWaitReplyError: raise if reply not received.
+
+        Returns:
+            SecsMessage or None: Reply-Message if exist, otherwise None.
+        """
+
         return self._send(
             strm, func, wbit,
             self._create_secs2body(secs2body),
             self._create_system_bytes(),
             self._dev_id)
 
-    def send_sml(self, sml):
-        strm, func, wbit, s2b = SmlParser.parse(sml)
+    def send_sml(self, sml_str):
+        """Send primary message by SML
+
+        Args:
+            sml_str (str): SML-string.
+
+        Raises:
+            SecsCommunicatorError: raise if communicator not opened.
+            SecsSendMessageError: raise if send failed.
+            SecsWaitReplyError: raise if reply not received.
+            Secs2BodySmlParseError: raise if Secs2body parse failed.
+            SmlParseError: raise if SML parse failed.
+
+        Returns:
+            SecsMessage or None: Reply-Message if exist, otherwise None.
+        """
+        strm, func, wbit, s2b = SmlParser.parse(sml_str)
         return self.send(strm, func, wbit, s2b)
 
     def reply(self, primary, strm, func, wbit, secs2body=None):
+        """Send reply message
+
+        Args:
+            primary (SecsMessage): Primary-Message.
+            strm (int): Stream-Number.
+            func (int): Function-Number.
+            wbit (bool: W-Bit.
+            Secs2Body (Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
+
+        Raises:
+            SecsCommunicatorError: raise if communicator not opened.
+            SecsSendMessageError: raise if send failed.
+
+        Returns:
+            None: None
+        """
         return self._send(
             strm, func, wbit,
             self._create_secs2body(secs2body),
             primary.get_system_bytes(),
             self._dev_id)
 
-    def reply_sml(self, primary, sml):
-        strm, func, wbit, s2b = SmlParser.parse(sml)
+    def reply_sml(self, primary, sml_str):
+        """Send reply message by SML
+
+        Args:
+            primary (SecsMessage): Primary-Message
+            sml_str (str): SML-String
+
+        Raises:
+            SecsCommunicatorError: raise if communicator not opened.
+            SecsSendMessageError: raise if send failed.
+            Secs2BodySmlParseError: raise if Secs2body parse failed.
+            SmlParseError: raise if SML parse failed.
+
+        Returns:
+            None: None
+        """
+        strm, func, wbit, s2b = SmlParser.parse(sml_str)
         return self.reply(
             primary,
             strm, func, wbit,
@@ -1537,8 +1600,23 @@ class AbstractSecsCommunicator:
 
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
-        """
-        prototype-pattern
+        """prototype-pattern send
+
+        Args:
+            strm (int): Stream-Number.
+            func (int): Function-Number.
+            wbit (bool): W-Bit.
+            secs2body (Secs2Body, tuple, list or None): SECS-II-body.
+            system_bytes (bytes): System-4-bytes.
+            device_id (int): Device-ID.
+
+        Raises:
+            SecsCommunicatorError: raise if communicator not opened.
+            SecsSendMessageError: raise if send failed.
+            SecsWaitReplyError: raise if reply not received.
+
+        Returns:
+            SecsMessage or None: Reply-Message if exist, otherwise None
         """
         raise NotImplementedError()
 
@@ -1563,11 +1641,11 @@ class AbstractSecsCommunicator:
         """test-set-timeout-tx
 
         Args:
-            v (int or float): timeout-time-seconds
+            v (int or float): timeout-time-seconds.
 
         Raises:
-            TypeError: raise if v is None
-            ValueError: raise if v is not greater than 0.0
+            TypeError: raise if v is None.
+            ValueError: raise if v is not greater than 0.0.
 
         Returns:
             int or float: tested value
@@ -1584,11 +1662,11 @@ class AbstractSecsCommunicator:
         """Timeout-T1 setter.
 
         Args:
-            v (int or float): Timeout-T1 value
+            v (int or float): Timeout-T1 value.
 
         Raises:
-            TypeError: if value is None
-            ValueError: if value is not greater than 0.0
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
         """
         self._timeout_t1 = self._tstx(v)
 
@@ -1596,11 +1674,11 @@ class AbstractSecsCommunicator:
         """Timeout-T2 setter.
 
         Args:
-            v (int or float): Timeout-T2 value
+            v (int or float): Timeout-T2 value.
 
         Raises:
-            TypeError: if value is None
-            ValueError: if value is not greater than 0.0
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
         """
         self._timeout_t2 = self._tstx(v)
 
@@ -1608,11 +1686,11 @@ class AbstractSecsCommunicator:
         """Timeout-T3 setter.
 
         Args:
-            v (int or float): Timeout-T3 value
+            v (int or float): Timeout-T3 value.
 
         Raises:
-            TypeError: if value is None
-            ValueError: if value is not greater than 0.0
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
         """
         self._timeout_t3 = self._tstx(v)
 
@@ -1620,11 +1698,11 @@ class AbstractSecsCommunicator:
         """Timeout-T4 setter.
 
         Args:
-            v (int or float): Timeout-T4 value
+            v (int or float): Timeout-T4 value.
 
         Raises:
-            TypeError: if value is None
-            ValueError: if value is not greater than 0.0
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
         """
         self._timeout_t4 = self._tstx(v)
 
@@ -1632,11 +1710,11 @@ class AbstractSecsCommunicator:
         """Timeout-T5 setter.
 
         Args:
-            v (int or float): Timeout-T5 value
+            v (int or float): Timeout-T5 value.
 
         Raises:
-            TypeError: if value is None
-            ValueError: if value is not greater than 0.0
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
         """
         self._timeout_t5 = self._tstx(v)
 
@@ -1644,11 +1722,11 @@ class AbstractSecsCommunicator:
         """Timeout-T6 setter.
 
         Args:
-            v (int or float): Timeout-T6 value
+            v (int or float): Timeout-T6 value.
 
         Raises:
-            TypeError: if value is None
-            ValueError: if value is not greater than 0.0
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
         """
         self._timeout_t6 = self._tstx(v)
 
@@ -1656,11 +1734,11 @@ class AbstractSecsCommunicator:
         """Timeout-T7 setter.
 
         Args:
-            v (int or float): Timeout-T7 value
+            v (int or float): Timeout-T7 value.
 
         Raises:
-            TypeError: if value is None
-            ValueError: if value is not greater than 0.0
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
         """
         self._timeout_t7 = self._tstx(v)
 
@@ -1668,11 +1746,11 @@ class AbstractSecsCommunicator:
         """Timeout-T8 setter.
 
         Args:
-            v (int or float): Timeout-T8 value
+            v (int or float): Timeout-T8 value.
 
         Raises:
-            TypeError: if value is None
-            ValueError: if value is not greater than 0.0
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
         """
         self._timeout_t8 = self._tstx(v)
 
@@ -1758,6 +1836,24 @@ class HsmsSsWaitReplyError(SecsWaitReplyError):
 
     def __init__(self, msg, ref_msg):
         super(HsmsSsWaitReplyError, self).__init__(msg, ref_msg)
+
+
+class HsmsSsTimeoutT3Error(HsmsSsWaitReplyError):
+
+    def __init__(self, msg, ref_msg):
+        super(HsmsSsTimeoutT3Error, self).__init__(msg, ref_msg)
+
+
+class HsmsSsTimeoutT6Error(HsmsSsWaitReplyError):
+
+    def __init__(self, msg, ref_msg):
+        super(HsmsSsTimeoutT6Error, self).__init__(msg, ref_msg)
+
+
+class HsmsSsRejectMessageError(HsmsSsWaitReplyError):
+
+    def __init__(self, ref_msg):
+        super(HsmsSsRejectMessageError, self).__init__('Reject', ref_msg)
 
 
 class HsmsSsCommunicateState:
@@ -1931,9 +2027,19 @@ class HsmsSsConnection:
                 f = self._tpe.submit(_f)
 
                 try:
-                    return f.result(timeout_tx)
+                    r = f.result(timeout_tx)
+
+                    if r.get_control_type() == HsmsSsControlType.REJECT_REQ:
+                        raise HsmsSsRejectMessageError(msg)
+
+                    return r
+
                 except concurrent.futures.TimeoutError as e:
-                    raise HsmsSsWaitReplyError(e, msg)
+
+                    if ctrl_type == HsmsSsControlType.DATA:
+                        raise HsmsSsTimeoutT3Error(e, msg)
+                    else:
+                        raise HsmsSsTimeoutT6Error(e, msg)
 
             finally:
                 with self._rsp_pool_lock:
