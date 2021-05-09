@@ -24,7 +24,7 @@ class SmlParser:
         """parse from SML to Tuple
 
         Args:
-            sml_str (str): SML string
+            sml_str (str): SML string.
 
         Raises:
             Secs2BodySmlParseError: raise if Secs2body parse failed.

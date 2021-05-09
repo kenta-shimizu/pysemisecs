@@ -22,6 +22,24 @@ class HsmsSsWaitReplyError(secs.SecsWaitReplyError):
         super(HsmsSsWaitReplyError, self).__init__(msg, ref_msg)
 
 
+class HsmsSsTimeoutT3Error(HsmsSsWaitReplyError):
+
+    def __init__(self, msg, ref_msg):
+        super(HsmsSsTimeoutT3Error, self).__init__(msg, ref_msg)
+
+
+class HsmsSsTimeoutT6Error(HsmsSsWaitReplyError):
+
+    def __init__(self, msg, ref_msg):
+        super(HsmsSsTimeoutT6Error, self).__init__(msg, ref_msg)
+
+
+class HsmsSsRejectMessageError(HsmsSsWaitReplyError):
+
+    def __init__(self, ref_msg):
+        super(HsmsSsRejectMessageError, self).__init__('Reject', ref_msg)
+
+
 class HsmsSsCommunicateState:
 
     NOT_CONNECT = 'not_connect'
@@ -193,9 +211,19 @@ class HsmsSsConnection:
                 f = self._tpe.submit(_f)
 
                 try:
-                    return f.result(timeout_tx)
+                    r = f.result(timeout_tx)
+
+                    if r.get_control_type() == secs.HsmsSsControlType.REJECT_REQ:
+                        raise HsmsSsRejectMessageError(msg)
+
+                    return r
+
                 except concurrent.futures.TimeoutError as e:
-                    raise HsmsSsWaitReplyError(e, msg)
+
+                    if ctrl_type == secs.HsmsSsControlType.DATA:
+                        raise HsmsSsTimeoutT3Error(e, msg)
+                    else:
+                        raise HsmsSsTimeoutT6Error(e, msg)
 
             finally:
                 with self._rsp_pool_lock:

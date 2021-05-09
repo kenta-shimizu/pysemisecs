@@ -19,7 +19,7 @@ This library is SEMI-SECS-communicate implementation on Python3.
 - Most simple way, Download [secs.py](https://raw.githubusercontent.com/kenta-shimizu/pysemisecs/main/simple/secs.py) file
 
   `import secs`  
-  or append codes in `if __name__ == '__main__'`
+  or append codes in `if __name__ == '__main__':`
 
 - pip install
 
@@ -35,6 +35,10 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
   building...
 
+- For use SECS-I example
+
+  building...
+
 ## Send Primary-Message and receive Reply-Message
 
 building...
@@ -47,8 +51,19 @@ building...
 
 - Send Primary-Message
 
-  building...
+  ```python
+  active.send_sml('S1F1 W.')
+  ```
 
 - Send Reply-Message
 
-  buiding...
+  ```python
+  passive.reply_sml(
+      primary_msg,
+      'S1F2          ' +
+      '<L            ' +
+      '  <A "MDLN-A">' +
+      '  <A "000001">' +
+      '>.            '
+  )
+  ```
