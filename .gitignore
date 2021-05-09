@@ -1,3 +1,9 @@
+# MacOS
+*.DS_Store
+
+# sh
+gitauto.sh
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
