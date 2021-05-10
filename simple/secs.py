@@ -1,9 +1,9 @@
-import re
-import concurrent.futures
-import threading
-import socket
-import struct
 import os
+import struct
+import socket
+import concurrent.futures
+import re
+import threading
 
 
 class Secs2BodyParseError(Exception):
@@ -1484,7 +1484,7 @@ class AbstractSecsCommunicator:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        self._close()
 
     def send(self, strm, func, wbit, secs2body=None):
         """Send primary message
@@ -1492,18 +1492,37 @@ class AbstractSecsCommunicator:
         Args:
             strm (int): Stream-Number.
             func (int): Function-Number.
-            wbit (bool: W-Bit.
-            Secs2Body (Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
+            wbit (bool): W-Bit.
+            secs2body (<Secs2Body> tuple or list, optional): SECS-II-body. Defaults to None.
 
         Raises:
-            SecsCommunicatorError: raise if communicator not opened.
-            SecsSendMessageError: raise if send failed.
-            SecsWaitReplyError: raise if reply not received.
+            SecsCommunicatorError: if communicator not opened.
+            SecsSendMessageError: if send failed.
+            SecsWaitReplyError: if reply not received.
 
         Returns:
-            SecsMessage or None: Reply-Message if exist, otherwise None.
-        """
+            <SecsMessage> or None: Reply-Message if exist, otherwise None.
 
+        Examples:
+            if send 'S1F1 W.',
+            send(1, 1, True)
+
+            if send
+            'S5F1 W
+            <L
+              <B  0x01>
+              <U2 1001>
+              <A  "ON FIRE">
+            >.',
+            send(
+                5, 1, True,
+                ('L', [
+                    ('B', [0x01]),
+                    ('U2', [1001]),
+                    ('A', "ON FIRE")
+                ])
+                )
+        """
         return self._send(
             strm, func, wbit,
             self._create_secs2body(secs2body),
@@ -1517,11 +1536,11 @@ class AbstractSecsCommunicator:
             sml_str (str): SML-string.
 
         Raises:
-            SecsCommunicatorError: raise if communicator not opened.
-            SecsSendMessageError: raise if send failed.
-            SecsWaitReplyError: raise if reply not received.
-            Secs2BodySmlParseError: raise if Secs2body parse failed.
-            SmlParseError: raise if SML parse failed.
+            SecsCommunicatorError: if communicator not opened.
+            SecsSendMessageError: if send failed.
+            SecsWaitReplyError: if reply not received.
+            Secs2BodySmlParseError: if Secs2body parse failed.
+            SmlParseError: if SML parse failed.
 
         Returns:
             SecsMessage or None: Reply-Message if exist, otherwise None.
@@ -1540,11 +1559,15 @@ class AbstractSecsCommunicator:
             Secs2Body (Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
 
         Raises:
-            SecsCommunicatorError: raise if communicator not opened.
-            SecsSendMessageError: raise if send failed.
+            SecsCommunicatorError: if communicator not opened.
+            SecsSendMessageError: if send failed.
 
         Returns:
             None: None
+
+        Examples:
+            if reply 'S1F18 <B 0x0>.',
+            reply(2, 18, False, ('B', [0x0]))
         """
         return self._send(
             strm, func, wbit,
@@ -1560,10 +1583,10 @@ class AbstractSecsCommunicator:
             sml_str (str): SML-String
 
         Raises:
-            SecsCommunicatorError: raise if communicator not opened.
-            SecsSendMessageError: raise if send failed.
-            Secs2BodySmlParseError: raise if Secs2body parse failed.
-            SmlParseError: raise if SML parse failed.
+            SecsCommunicatorError: if communicator not opened.
+            SecsSendMessageError: if send failed.
+            Secs2BodySmlParseError: if Secs2body parse failed.
+            SmlParseError: if SML parse failed.
 
         Returns:
             None: None
@@ -1611,9 +1634,9 @@ class AbstractSecsCommunicator:
             device_id (int): Device-ID.
 
         Raises:
-            SecsCommunicatorError: raise if communicator not opened.
-            SecsSendMessageError: raise if send failed.
-            SecsWaitReplyError: raise if reply not received.
+            SecsCommunicatorError: if communicator not opened.
+            SecsSendMessageError: if send failed.
+            SecsWaitReplyError: if reply not received.
 
         Returns:
             SecsMessage or None: Reply-Message if exist, otherwise None
@@ -1650,7 +1673,6 @@ class AbstractSecsCommunicator:
         Returns:
             int or float: tested value
         """
-
         if v is None:
             raise TypeError("Timeout-value require not None")
         if v > 0.0:
@@ -1970,7 +1992,7 @@ class HsmsSsConnection:
 
                 return None
 
-        self._parent._tpe.submit(_f)
+        self._tpe.submit(_f)
 
     def close(self):
         self._closed = True
@@ -1991,7 +2013,8 @@ class HsmsSsConnection:
         if ctrl_type == HsmsSsControlType.DATA:
             if msg.has_wbit():
                 timeout_tx = self._parent._timeout_t3
-        elif ctrl_type in (HsmsSsControlType.SELECT_REQ, HsmsSsControlType.LINKTEST_REQ):
+        elif (ctrl_type == HsmsSsControlType.SELECT_REQ
+            or ctrl_type == HsmsSsControlType.LINKTEST_REQ):
             timeout_tx = self._parent._timeout_t6
 
         def _send(msg):
@@ -2318,7 +2341,7 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
 
                                     try:
                                         sock.shutdown(socket.SHUT_WR)
-                                    except Exception:
+                                    except Exception as e:
                                         pass
 
                     except ConnectionError as e:

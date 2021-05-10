@@ -154,7 +154,7 @@ class HsmsSsConnection:
 
                 return None
         
-        self._parent._tpe.submit(_f)
+        self._tpe.submit(_f)
 
     def close(self):
         self._closed = True
@@ -175,7 +175,8 @@ class HsmsSsConnection:
         if ctrl_type == secs.HsmsSsControlType.DATA:
             if msg.has_wbit():
                 timeout_tx = self._parent._timeout_t3
-        elif ctrl_type in (secs.HsmsSsControlType.SELECT_REQ, secs.HsmsSsControlType.LINKTEST_REQ):
+        elif (ctrl_type == secs.HsmsSsControlType.SELECT_REQ
+            or ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ):
             timeout_tx = self._parent._timeout_t6
 
         def _send(msg):

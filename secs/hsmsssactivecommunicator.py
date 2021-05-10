@@ -132,7 +132,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                                     try:
                                         sock.shutdown(socket.SHUT_WR)
-                                    except Exception:
+                                    except Exception as e:
                                         pass
 
                     except ConnectionError as e:
