@@ -164,4 +164,4 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
         with self._waiting_cdt:
             self._waiting_cdt.notify_all()
 
-        self._tpe.shutdown(wait=False, cancel_futures=True)
+        self._tpe.shutdown(wait=True, cancel_futures=True)
