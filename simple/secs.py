@@ -1,9 +1,9 @@
-import os
-import struct
 import socket
-import concurrent.futures
-import re
 import threading
+import struct
+import re
+import os
+import concurrent.futures
 
 
 class Secs2BodyParseError(Exception):
@@ -1346,7 +1346,7 @@ class PutListQueuing(AbstractQueuing):
                     return -1
 
         with self._open_close_lock:
-            if self._closed and not self._opened:
+            if self._closed or not self._opened:
                 return -1
 
         with self._v_cdt:
@@ -1356,7 +1356,7 @@ class PutListQueuing(AbstractQueuing):
             self._v_cdt.wait(timeout)
 
         with self._open_close_lock:
-            if self._closed and not self._opened:
+            if self._closed or not self._opened:
                 return -1
 
         return _f(values, pos, size)
@@ -1423,6 +1423,10 @@ class AbstractSecsCommunicator:
         self._sended_msg_lstnrs = list()
         self._communicated_lstnrs = list()
         self._error_listeners = list()
+
+        rpm = kwargs.get('recv_primary_msg', None)
+        if rpm is not None:
+            self.add_recv_primary_msg_listener(rpm)
 
         # TODO
         # kwargs
@@ -1990,8 +1994,6 @@ class HsmsSsConnection:
                     if not self._closed:
                         self._parent._put_error(HsmsSsCommunicatorError(e))
 
-                return None
-
         self._tpe.submit(_f)
 
     def close(self):
@@ -2003,7 +2005,7 @@ class HsmsSsConnection:
         with self._rsp_pool_cdt:
             self._rsp_pool_cdt.notify_all()
 
-        self._tpe.shutdown()
+        self._tpe.shutdown(wait=False, cancel_futures=True)
 
     def send(self, msg):
 
@@ -2373,7 +2375,7 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
         with self._waiting_cdt:
             self._waiting_cdt.notify_all()
 
-        self._tpe.shutdown()
+        self._tpe.shutdown(wait=False, cancel_futures=True)
 
 
 class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
@@ -2602,7 +2604,7 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
             with cdt:
                 cdt.notify_all()
 
-        self._tpe.shutdown()
+        self._tpe.shutdown(wait=False, cancel_futures=True)
 
 
 class AbstractSecs1Communicator(AbstractSecsCommunicator):
