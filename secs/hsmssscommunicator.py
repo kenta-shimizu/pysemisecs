@@ -147,13 +147,11 @@ class HsmsSsConnection:
                         else:
                             self._parent._put_error(HsmsSsCommunicatorError("Terminate detect"))
                             break
-                            
+
                 except Exception as e:
                     if not self._closed:
                         self._parent._put_error(HsmsSsCommunicatorError(e))
 
-                return None
-        
         self._tpe.submit(_f)
 
     def close(self):
@@ -165,7 +163,7 @@ class HsmsSsConnection:
         with self._rsp_pool_cdt:
             self._rsp_pool_cdt.notify_all()
 
-        self._tpe.shutdown()
+        self._tpe.shutdown(wait=False, cancel_futures=True)
 
     def send(self, msg):
 

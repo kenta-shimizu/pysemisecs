@@ -132,7 +132,7 @@ class PutListQueuing(AbstractQueuing):
                     return -1
 
         with self._open_close_lock:
-            if self._closed and not self._opened:
+            if self._closed or not self._opened:
                 return -1
                 
         with self._v_cdt:
@@ -142,7 +142,7 @@ class PutListQueuing(AbstractQueuing):
             self._v_cdt.wait(timeout)
 
         with self._open_close_lock:
-            if self._closed and not self._opened:
+            if self._closed or not self._opened:
                 return -1
 
         return _f(values, pos, size)
@@ -209,6 +209,10 @@ class AbstractSecsCommunicator:
         self._sended_msg_lstnrs = list()
         self._communicated_lstnrs = list()
         self._error_listeners = list()
+
+        rpm = kwargs.get('recv_primary_msg', None)
+        if rpm is not None:
+            self.add_recv_primary_msg_listener(rpm)
 
         # TODO
         # kwargs

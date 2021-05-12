@@ -230,4 +230,4 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
             with cdt:
                 cdt.notify_all()
 
-        self._tpe.shutdown()
+        self._tpe.shutdown(wait=False, cancel_futures=True)

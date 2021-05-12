@@ -145,7 +145,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                         self._put_error(e)
                     finally:
                         self._put_hsmsss_comm_state_to_not_connected()
-                    
+
                     if self.is_closed():
                         return None
 
@@ -164,4 +164,4 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
         with self._waiting_cdt:
             self._waiting_cdt.notify_all()
 
-        self._tpe.shutdown()
+        self._tpe.shutdown(wait=False, cancel_futures=True)
