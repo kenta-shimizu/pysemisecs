@@ -29,11 +29,37 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
 - For use HSMS-SS-Passive example
 
-  building...
+  ```python
+  passive = HsmsSsPassiveCommunicator(
+      ip_address='127.0.0.1',
+      port=5000,
+      session_id=10,
+      is_equip=True,
+      timeout_t3=45.0,
+      timeout_t6=5.0,
+      timeout_t7=10.0,
+      timeout_t8=6.0,
+      name='equip-passive-comm'
+  )
+  passive.open()
+  ```
 
 - For use HSMS-SS-Active example
 
-  building...
+  ```python
+  active = HsmsSsActiveCommunicator(
+      ip_address='127.0.0.1',
+      port=5000,
+      session_id=10,
+      is_equip=False,
+      timeout_t3=45.0,
+      timeout_t5=10.0,
+      timeout_t6=5.0,
+      timeout_t8=6.0,
+      name='host-acitve-comm'
+  )
+  active.open()
+  ```
 
 - For use SECS-I example
 
@@ -41,7 +67,26 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
 ## Send Primary-Message and receive Reply-Message
 
-building...
+  ```python
+  # Send
+  # S5F1 W
+  # <L
+  #   <B 0x81>
+  #   <U2 1001>
+  #   <A "ON FIRE">
+  # >.
+
+  reply_msg = passive.send(
+      strm=5,
+      func=1,
+      wbit=True,
+      secs2body=('L', [
+          ('B' , [0x81]),
+          ('U2', [1001]),
+          ('A' , "ON FIRE")
+      ])
+  )
+  ```
 
 ## Received Primary-Message, parse, and send Reply-Message
 
@@ -67,3 +112,7 @@ building...
       '>.            '
   )
   ```
+
+## GEM
+
+building...

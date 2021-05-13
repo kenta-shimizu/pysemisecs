@@ -211,7 +211,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 self._waiting_cdts.remove(cdt)
 
                 try:
-                    sock.shutdown(socket.SHUT_WR)
+                    sock.shutdown(socket.SHUT_RDWR)
                 except Exception:
                     pass
 

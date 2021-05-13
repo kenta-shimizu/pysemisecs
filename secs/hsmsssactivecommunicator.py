@@ -131,8 +131,8 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                                     self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
 
                                     try:
-                                        sock.shutdown(socket.SHUT_WR)
-                                    except Exception as e:
+                                        sock.shutdown(socket.SHUT_RDWR)
+                                    except Exception:
                                         pass
 
                     except ConnectionError as e:

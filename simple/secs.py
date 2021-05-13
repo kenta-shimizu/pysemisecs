@@ -1,8 +1,8 @@
 import socket
-import threading
 import struct
-import re
 import os
+import re
+import threading
 import concurrent.futures
 
 
@@ -1928,7 +1928,7 @@ class HsmsSsConnection:
 
                 def _recv_bytes():
 
-                    while True:
+                    while not self._closed:
 
                         try:
 
@@ -1982,7 +1982,7 @@ class HsmsSsConnection:
                 self._tpe.submit(_recv_bytes)
 
                 try :
-                    while True:
+                    while not self._closed:
                         bs = self._sock.recv(4096)
                         if bs:
                             llq.puts(bs)
@@ -2005,7 +2005,7 @@ class HsmsSsConnection:
         with self._rsp_pool_cdt:
             self._rsp_pool_cdt.notify_all()
 
-        self._tpe.shutdown(wait=False, cancel_futures=True)
+        self._tpe.shutdown(wait=True, cancel_futures=True)
 
     def send(self, msg):
 
@@ -2342,8 +2342,8 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
                                     self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
 
                                     try:
-                                        sock.shutdown(socket.SHUT_WR)
-                                    except Exception as e:
+                                        sock.shutdown(socket.SHUT_RDWR)
+                                    except Exception:
                                         pass
 
                     except ConnectionError as e:
@@ -2375,7 +2375,7 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
         with self._waiting_cdt:
             self._waiting_cdt.notify_all()
 
-        self._tpe.shutdown(wait=False, cancel_futures=True)
+        self._tpe.shutdown(wait=True, cancel_futures=True)
 
 
 class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
@@ -2585,7 +2585,7 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                 self._waiting_cdts.remove(cdt)
 
                 try:
-                    sock.shutdown(socket.SHUT_WR)
+                    sock.shutdown(socket.SHUT_RDWR)
                 except Exception:
                     pass
 
@@ -2604,7 +2604,7 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
             with cdt:
                 cdt.notify_all()
 
-        self._tpe.shutdown(wait=False, cancel_futures=True)
+        self._tpe.shutdown(wait=True, cancel_futures=True)
 
 
 class AbstractSecs1Communicator(AbstractSecsCommunicator):

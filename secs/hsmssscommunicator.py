@@ -86,7 +86,7 @@ class HsmsSsConnection:
 
                 def _recv_bytes():
 
-                    while True:
+                    while not self._closed:
 
                         try:
 
@@ -140,7 +140,7 @@ class HsmsSsConnection:
                 self._tpe.submit(_recv_bytes)
 
                 try :
-                    while True:
+                    while not self._closed:
                         bs = self._sock.recv(4096)
                         if bs:
                             llq.puts(bs)
@@ -163,7 +163,7 @@ class HsmsSsConnection:
         with self._rsp_pool_cdt:
             self._rsp_pool_cdt.notify_all()
 
-        self._tpe.shutdown(wait=False, cancel_futures=True)
+        self._tpe.shutdown(wait=True, cancel_futures=True)
 
     def send(self, msg):
 
