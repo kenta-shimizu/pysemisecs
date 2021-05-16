@@ -63,7 +63,11 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
 - For use SECS-I example
 
-  building...
+  ```python
+  # building...
+  ```
+
+Notes: To shutdown program, must `AbstractSecsCommunicator.close()`, or use a `with` statement.
 
 ## Send Primary-Message and receive Reply-Message
 
@@ -88,9 +92,41 @@ This library is SEMI-SECS-communicate implementation on Python3.
   )
   ```
 
+  `AbstractSecsCommunicator.send` is blocking-method.  
+  Blocking until Reply-Message received.  
+  Reply-Message has value if W-Bit is `True`, otherwise `None`  
+  If T3-Timeout, raise `SecsWaitReplyMessageError`.
+
+
 ## Received Primary-Message, parse, and send Reply-Message
 
-building...
+1. Add listener to receive Primary-Message
+
+  ```python
+  def recv_primary_msg(primary_msg, comm):
+      # something...
+
+  active.add_recv_primary_msg_listener(recv_primary_msg)
+  ```
+
+2. Parse Primary-Message
+
+  ```python
+  ```
+
+3. Send Reply-Message
+
+  ```python
+  # Reply S5F2 <B 0x0>.
+
+  comm.reply(
+      primary=primary_msg,
+      strm=5,
+      func=2,
+      wbit=True,
+      secs2body=('B', [0x0])
+  )
+  ```
 
 ## SML
 
@@ -115,7 +151,7 @@ building...
 
 ## GEM
 
-Access from `.gem` property.
+Access from `AbstractSecsCommunicator.gem` property.
 
 ### Others
 

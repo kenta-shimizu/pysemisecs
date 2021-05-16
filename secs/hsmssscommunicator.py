@@ -16,25 +16,25 @@ class HsmsSsSendMessageError(secs.SecsSendMessageError):
         super(HsmsSsSendMessageError, self).__init__(msg, ref_msg)
 
 
-class HsmsSsWaitReplyError(secs.SecsWaitReplyMessageError):
+class HsmsSsWaitReplyMessageError(secs.SecsWaitReplyMessageError):
 
     def __init__(self, msg, ref_msg):
-        super(HsmsSsWaitReplyError, self).__init__(msg, ref_msg)
+        super(HsmsSsWaitReplyMessageError, self).__init__(msg, ref_msg)
 
 
-class HsmsSsTimeoutT3Error(HsmsSsWaitReplyError):
+class HsmsSsTimeoutT3Error(HsmsSsWaitReplyMessageError):
 
     def __init__(self, msg, ref_msg):
         super(HsmsSsTimeoutT3Error, self).__init__(msg, ref_msg)
 
 
-class HsmsSsTimeoutT6Error(HsmsSsWaitReplyError):
+class HsmsSsTimeoutT6Error(HsmsSsWaitReplyMessageError):
 
     def __init__(self, msg, ref_msg):
         super(HsmsSsTimeoutT6Error, self).__init__(msg, ref_msg)
 
 
-class HsmsSsRejectMessageError(HsmsSsWaitReplyError):
+class HsmsSsRejectMessageError(HsmsSsWaitReplyMessageError):
 
     def __init__(self, ref_msg):
         super(HsmsSsRejectMessageError, self).__init__('Reject', ref_msg)
