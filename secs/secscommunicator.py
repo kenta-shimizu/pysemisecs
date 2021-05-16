@@ -41,10 +41,10 @@ class SecsSendMessageError(SecsWithReferenceMessageError):
         super(SecsSendMessageError, self).__init__(msg, ref_msg)
 
 
-class SecsWaitReplyError(SecsWithReferenceMessageError):
+class SecsWaitReplyMessageError(SecsWithReferenceMessageError):
     
     def __init__(self, msg, ref_msg):
-        super(SecsWaitReplyError, self).__init__(msg, ref_msg)
+        super(SecsWaitReplyMessageError, self).__init__(msg, ref_msg)
 
 
 class AbstractQueuing:

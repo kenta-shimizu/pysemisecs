@@ -16,7 +16,7 @@ class HsmsSsSendMessageError(secs.SecsSendMessageError):
         super(HsmsSsSendMessageError, self).__init__(msg, ref_msg)
 
 
-class HsmsSsWaitReplyError(secs.SecsWaitReplyError):
+class HsmsSsWaitReplyError(secs.SecsWaitReplyMessageError):
 
     def __init__(self, msg, ref_msg):
         super(HsmsSsWaitReplyError, self).__init__(msg, ref_msg)
