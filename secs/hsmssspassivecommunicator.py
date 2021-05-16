@@ -12,7 +12,9 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
         super(HsmsSsPassiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
         self._tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
         self._ipaddr = (ip_address, port)
+
         self._waiting_cdts = list()
+        self.__open_close_local_lock = threading.Lock()
 
     def get_protocol(self):
         return self._PROTOCOL_NAME
@@ -22,10 +24,10 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
     def _open(self):
 
-        with self._open_close_rlock:
-            if self.is_closed():
+        with self.__open_close_local_lock:
+            if self.is_closed:
                 raise RuntimeError("Already closed")
-            if self.is_open():
+            if self.is_open:
                 raise RuntimeError("Already opened")
             self._set_opened()
 
@@ -41,7 +43,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                     def _f():
                         try:
-                            while not self.is_closed():
+                            while not self.is_closed:
 
                                 sock = (server.accept())[0]
 
@@ -51,7 +53,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                                 self._tpe.submit(_ff)
 
                         except Exception as e:
-                            if self.is_open():
+                            if self.is_open:
                                 self._put_error(secs.HsmsSsCommunicatorError(e))
 
                     self._tpe.submit(_f)
@@ -61,7 +63,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                         cdt.wait()
 
             except Exception as e:
-                if self.is_open():
+                if self.is_open:
                     self._put_error(secs.HsmsSsCommunicatorError(e))
                     
         self._tpe.submit(_open_server)
@@ -79,9 +81,9 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                 try:
 
-                    while self.is_open():
+                    while self.is_open:
 
-                        msg = wq.poll(self._timeout_t7)
+                        msg = wq.poll(self.timeout_t7)
 
                         if msg is None:
                             raise secs.HsmsSsCommunicatorError("T7-Timeout")
@@ -193,7 +195,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                         self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
 
                 except secs.HsmsSsCommunicatorError as e:
-                    if self.is_open():
+                    if self.is_open:
                         self._put_error(e)
                 except secs.HsmsSsSendMessageError as e:
                     self._put_error(e)
@@ -221,8 +223,8 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
     def _close(self):
 
-        with self._open_close_rlock:
-            if self.is_closed():
+        with self.__open_close_local_lock:
+            if self.is_closed:
                 return
             self._set_closed()
 

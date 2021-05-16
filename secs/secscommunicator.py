@@ -1,4 +1,5 @@
 import threading
+from types import GetSetDescriptorType
 import secs
 
 
@@ -7,25 +8,43 @@ class SecsCommunicatorError(Exception):
     def __init__(self, msg):
         super(SecsCommunicatorError, self).__init__(msg)
 
+    def __str__(self):
+        return repr(self)
 
-class SecsSendMessageError(Exception):
+
+class SecsWithReferenceMessageError(SecsCommunicatorError):
 
     def __init__(self, msg, ref_msg):
-        super(SecsSendMessageError, self).__init__(msg)
+        super(SecsWithReferenceMessageError, self).__init__(msg)
+        self._msg = msg
         self._ref_msg = ref_msg
 
     def get_reference_message(self):
         return self._ref_msg
 
+    def __str__(self):
+        return (self.__class__.__name__ + '('
+        + repr(self._msg) + ','
+        + self._ref_msg._header10bytes_str()
+        + ')')
 
-class SecsWaitReplyError(Exception):
+    def __repr__(self):
+        return (self.__class__.__name__ + '('
+        + repr(self._msg) + ','
+        + repr(self._ref_msg._header10bytes())
+        + ')')
+
+
+class SecsSendMessageError(SecsWithReferenceMessageError):
+
+    def __init__(self, msg, ref_msg):
+        super(SecsSendMessageError, self).__init__(msg, ref_msg)
+
+
+class SecsWaitReplyError(SecsWithReferenceMessageError):
     
     def __init__(self, msg, ref_msg):
-        super(SecsWaitReplyError, self).__init__(msg)
-        self._ref_msg = ref_msg
-
-    def get_reference_message(self):
-        return self._ref_msg
+        super(SecsWaitReplyError, self).__init__(msg, ref_msg)
 
 
 class AbstractQueuing:
@@ -174,52 +193,379 @@ class WaitingQueuing(AbstractQueuing):
 
 class AbstractSecsCommunicator:
 
-    _DEFAULT_TIMEOUT_T1 =  1.0
-    _DEFAULT_TIMEOUT_T2 = 15.0
-    _DEFAULT_TIMEOUT_T3 = 45.0
-    _DEFAULT_TIMEOUT_T4 = 45.0
-    _DEFAULT_TIMEOUT_T5 = 10.0
-    _DEFAULT_TIMEOUT_T6 =  5.0
-    _DEFAULT_TIMEOUT_T7 = 10.0
-    _DEFAULT_TIMEOUT_T8 =  6.0
+    __DEFAULT_TIMEOUT_T1 =  1.0
+    __DEFAULT_TIMEOUT_T2 = 15.0
+    __DEFAULT_TIMEOUT_T3 = 45.0
+    __DEFAULT_TIMEOUT_T4 = 45.0
+    __DEFAULT_TIMEOUT_T5 = 10.0
+    __DEFAULT_TIMEOUT_T6 =  5.0
+    __DEFAULT_TIMEOUT_T7 = 10.0
+    __DEFAULT_TIMEOUT_T8 =  6.0
 
     def __init__(self, device_id, is_equip, **kwargs):
-        self._dev_id = device_id
-        self._is_equip = is_equip
 
-        self.set_name(kwargs.get('name', None))
+        self.__gem = secs.Gem(self)
 
-        self.set_timeout_t1(kwargs.get('timeout_t1', self._DEFAULT_TIMEOUT_T1))
-        self.set_timeout_t2(kwargs.get('timeout_t2', self._DEFAULT_TIMEOUT_T2))
-        self.set_timeout_t3(kwargs.get('timeout_t3', self._DEFAULT_TIMEOUT_T3))
-        self.set_timeout_t4(kwargs.get('timeout_t4', self._DEFAULT_TIMEOUT_T4))
-        self.set_timeout_t5(kwargs.get('timeout_t5', self._DEFAULT_TIMEOUT_T5))
-        self.set_timeout_t6(kwargs.get('timeout_t6', self._DEFAULT_TIMEOUT_T6))
-        self.set_timeout_t7(kwargs.get('timeout_t7', self._DEFAULT_TIMEOUT_T7))
-        self.set_timeout_t8(kwargs.get('timeout_t8', self._DEFAULT_TIMEOUT_T8))
+        self.device_id = device_id
+        self.is_equip = is_equip
+
+        self.name = kwargs.get('name', None)
+        self.timeout_t1 = kwargs.get('timeout_t1', self.__DEFAULT_TIMEOUT_T1)
+        self.timeout_t2 = kwargs.get('timeout_t2', self.__DEFAULT_TIMEOUT_T2)
+        self.timeout_t3 = kwargs.get('timeout_t3', self.__DEFAULT_TIMEOUT_T3)
+        self.timeout_t4 = kwargs.get('timeout_t4', self.__DEFAULT_TIMEOUT_T4)
+        self.timeout_t5 = kwargs.get('timeout_t5', self.__DEFAULT_TIMEOUT_T5)
+        self.timeout_t6 = kwargs.get('timeout_t6', self.__DEFAULT_TIMEOUT_T6)
+        self.timeout_t7 = kwargs.get('timeout_t7', self.__DEFAULT_TIMEOUT_T7)
+        self.timeout_t8 = kwargs.get('timeout_t8', self.__DEFAULT_TIMEOUT_T8)
+
+        gem_mdln = kwargs.get('gem_mdln', None)
+        if gem_mdln is not None:
+            self.gem.mdln = gem_mdln
+
+        gem_softrev = kwargs.get('gem_softrev', None)
+        if gem_softrev is not None:
+            self.gem.softrev = gem_softrev
+
+        gem_clock_type = kwargs.get('gem_clock_type', None)
+        if gem_clock_type is not None:
+            self.gem.clock_type = gem_clock_type
 
         self._sys_num = 0
 
-        self._communicating = False
-        self._comm_rlock = threading.RLock()
-        self._comm_condition = threading.Condition()
+        self.__communicating = False
+        self.__comm_rlock = threading.RLock()
+        self.__comm_condition = threading.Condition()
 
-        self._recv_primary_msg_lstnrs = list()
-        self._recv_all_msg_lstnrs = list()
-        self._sended_msg_lstnrs = list()
-        self._communicated_lstnrs = list()
-        self._error_listeners = list()
+        self.__recv_primary_msg_lstnrs = list()
+        self.__communicate_lstnrs = list()
+        self.__error_listeners = list()
+        self.__recv_all_msg_lstnrs = list()
+        self.__sended_msg_lstnrs = list()
 
-        rpm = kwargs.get('recv_primary_msg', None)
-        if rpm is not None:
-            self.add_recv_primary_msg_listener(rpm)
+        rpml = kwargs.get('recv_primary_msg', None)
+        if rpml is not None:
+            self.add_recv_primary_msg_listener(rpml)
 
-        # TODO
-        # kwargs
+        errl = kwargs.get('error', None)
+        if errl is not None:
+            self.add_error_listener(errl)
 
-        self._opened = False
-        self._closed = False
-        self._open_close_rlock = threading.RLock()
+        comml = kwargs.get('communicate', None)
+        if comml is not None:
+            self.add_communicate_listener(comml)
+        
+        self.__opened = False
+        self.__closed = False
+        self.__open_close_rlock = threading.RLock()
+
+    @property
+    def gem(self):
+        pass
+
+    @gem.getter
+    def gem(self):
+        """GEM getter
+
+        Returns:
+            <Gem>: GEM-instance
+        """
+        return self.__gem
+
+    @property
+    def device_id(self):
+        pass
+
+    @device_id.getter
+    def device_id(self):
+        """Device-ID getter.
+
+        Returns:
+            int: Device-ID
+        """
+        return self.__device_id
+
+    @device_id.setter
+    def device_id(self, val):
+        """Device-ID setter.
+
+        Args:
+            val (int): Device_ID
+        """
+        self.__device_id = val
+
+    @property
+    def is_equip(self):
+        pass
+
+    @is_equip.setter
+    def is_equip(self, val):
+        """is-Equipment setter.
+
+        Args:
+            val (bool): is-Equipment
+        """
+        self.__is_equip = bool(val)
+
+    @is_equip.getter
+    def is_equip(self):
+        """is-Equipment getter.
+
+        Returns:
+            bool: True if Equipment
+        """
+        return self.__is_equip
+
+    @property
+    def name(self):
+        pass
+
+    @name.setter
+    def name(self, val):
+        """Communicator-Name setter.
+
+        Args:
+            val (str or None): Communicator-Name
+        """
+        self.__name = val if val is None else str(val)
+
+    @name.getter
+    def name(self):
+        """Communicator-Name getter.
+
+        Returns:
+            str: Communicator-Name
+        """
+        return self.__name
+
+    @staticmethod
+    def _tstx(v):
+        """test-set-timeout-tx
+
+        Args:
+            v (int or float): timeout-time-seconds.
+
+        Raises:
+            TypeError: raise if v is None.
+            ValueError: raise if v is not greater than 0.0.
+
+        Returns:
+            int or float: tested value
+        """
+        if v is None:
+            raise TypeError("Timeout-value require not None")
+        if v > 0.0:
+            return v
+        else:
+            raise ValueError("Timeout-value require > 0.0")
+
+    @property
+    def timeout_t1(self):
+        pass
+
+    @timeout_t1.getter
+    def timeout_t1(self):
+        """Timeout-T1 getter.
+
+        Returns:
+            float: Timeout-T1
+        """
+        return self.__timeout_t1
+
+    @timeout_t1.setter
+    def timeout_t1(self, val):
+        """Timeout-T1 setter.
+
+        Args:
+            v (int or float): Timeout-T1 value.
+
+        Raises:
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
+        """
+        self.__timeout_t1 = self._tstx(val)
+
+    @property
+    def timeout_t2(self):
+        pass
+
+    @timeout_t2.getter
+    def timeout_t2(self):
+        """Timeout-T2 getter.
+
+        Returns:
+            float: Timeout-T2
+        """
+        return self.__timeout_t2
+
+    @timeout_t2.setter
+    def timeout_t2(self, val):
+        """Timeout-T2 setter.
+
+        Args:
+            v (int or float): Timeout-T2 value.
+
+        Raises:
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
+        """
+        self.__timeout_t2 = self._tstx(val)
+
+    @property
+    def timeout_t3(self):
+        pass
+
+    @timeout_t3.getter
+    def timeout_t3(self):
+        """Timeout-T3 getter.
+
+        Returns:
+            float: Timeout-T3
+        """
+        return self.__timeout_t3
+
+    @timeout_t3.setter
+    def timeout_t3(self, val):
+        """Timeout-T3 setter.
+
+        Args:
+            v (int or float): Timeout-T3 value.
+
+        Raises:
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
+        """
+        self.__timeout_t3 = self._tstx(val)
+
+    @property
+    def timeout_t4(self):
+        pass
+
+    @timeout_t4.getter
+    def timeout_t4(self):
+        """Timeout-T4 getter.
+
+        Returns:
+            float: Timeout-T4
+        """
+        return self.__timeout_t4
+
+    @timeout_t4.setter
+    def timeout_t4(self, val):
+        """Timeout-T4 setter.
+
+        Args:
+            v (int or float): Timeout-T4 value.
+
+        Raises:
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
+        """
+        self.__timeout_t4 = self._tstx(val)
+
+    @property
+    def timeout_t5(self):
+        pass
+
+    @timeout_t5.getter
+    def timeout_t5(self):
+        """Timeout-T5 getter.
+
+        Returns:
+            float: Timeout-T5
+        """
+        return self.__timeout_t5
+
+    @timeout_t5.setter
+    def timeout_t5(self, val):
+        """Timeout-T5 setter.
+
+        Args:
+            v (int or float): Timeout-T5 value.
+
+        Raises:
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
+        """
+        self.__timeout_t5 = self._tstx(val)
+
+    @property
+    def timeout_t6(self):
+        pass
+
+    @timeout_t6.getter
+    def timeout_t6(self):
+        """Timeout-T6 getter.
+
+        Returns:
+            float: Timeout-T6
+        """
+        return self.__timeout_t6
+
+    @timeout_t6.setter
+    def timeout_t6(self, val):
+        """Timeout-T6 setter.
+
+        Args:
+            v (int or float): Timeout-T6 value.
+
+        Raises:
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
+        """
+        self.__timeout_t6 = self._tstx(val)
+
+    @property
+    def timeout_t7(self):
+        pass
+
+    @timeout_t7.getter
+    def timeout_t7(self):
+        """Timeout-T7 getter.
+
+        Returns:
+            float: Timeout-T7
+        """
+        return self.__timeout_t7
+
+    @timeout_t7.setter
+    def timeout_t7(self, val):
+        """Timeout-T7 setter.
+
+        Args:
+            v (int or float): Timeout-T7 value.
+
+        Raises:
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
+        """
+        self.__timeout_t7 = self._tstx(val)
+
+    @property
+    def timeout_t8(self):
+        pass
+
+    @timeout_t8.getter
+    def timeout_t8(self):
+        """Timeout-T8 getter.
+
+        Returns:
+            float: Timeout-T8
+        """
+        return self.__timeout_t8
+
+    @timeout_t8.setter
+    def timeout_t8(self, val):
+        """Timeout-T8 setter.
+
+        Args:
+            v (int or float): Timeout-T8 value.
+
+        Raises:
+            TypeError: if value is None.
+            ValueError: if value is not greater than 0.0.
+        """
+        self.__timeout_t8 = self._tstx(val)
 
     def open(self):
         """Open communicator
@@ -241,34 +587,44 @@ class AbstractSecsCommunicator:
 
     def open_and_wait_until_communicating(self):
 
-        if not self.is_open():
+        if not self.is_open:
             self._open()
 
         while True:
-            if self.is_closed():
+            if self.is_closed:
                 raise SecsCommunicatorError("Communicator closed")
-            if self.is_communicating():
+            if self.is_communicating:
                 return
-            with self._comm_condition:
-                self._comm_condition.wait()
+            with self.__comm_condition:
+                self.__comm_condition.wait()
 
+    @property
     def is_open(self):
-        with self._open_close_rlock:
-            return self._opened and not self._closed
+        pass
 
+    @is_open.getter
+    def is_open(self):
+        with self.__open_close_rlock:
+            return self.__opened and not self.__closed
+
+    @property
     def is_closed(self):
-        with self._open_close_rlock:
-            return self._closed
+        pass
 
+    @is_closed.getter
+    def is_closed(self):
+        with self.__open_close_rlock:
+            return self.__closed
+    
     def _set_opened(self):
-        with self._open_close_rlock:
-            self._opened = True
+        with self.__open_close_rlock:
+            self.__opened = True
 
     def _set_closed(self):
-        with self._open_close_rlock:
-            self._closed = True
-            with self._comm_condition:
-                self._comm_condition.notify_all()
+        with self.__open_close_rlock:
+            self.__closed = True
+            with self.__comm_condition:
+                self.__comm_condition.notify_all()
 
     def __enter__(self):
         return self
@@ -317,7 +673,7 @@ class AbstractSecsCommunicator:
             strm, func, wbit,
             self._create_secs2body(secs2body),
             self._create_system_bytes(),
-            self._dev_id)
+            self.device_id)
 
     def send_sml(self, sml_str):
         """Send primary message by SML
@@ -363,7 +719,7 @@ class AbstractSecsCommunicator:
             strm, func, wbit,
             self._create_secs2body(secs2body),
             primary.get_system_bytes(),
-            self._dev_id)
+            self.device_id)
 
     def reply_sml(self, primary, sml_str):
         """Send reply message by SML
@@ -390,7 +746,7 @@ class AbstractSecsCommunicator:
     def _create_system_bytes(self):
         self._sys_num = (self._sys_num + 1) & 0xFFFF
         n = self._sys_num
-        d = self._dev_id if self._is_equip else 0
+        d = self.device_id if self.is_equip else 0
         return bytes([
             (d >> 8) & 0x7F,
             d & 0xFF,
@@ -433,200 +789,72 @@ class AbstractSecsCommunicator:
         """
         raise NotImplementedError()
 
-    def set_name(self, name):
-        """Communicator-Name setter
-
-        Args:
-            name (str): Communicator-Name
-        """
-        self._comm_name = None if name is None else str(name)
-    
-    def get_name(self):
-        """Communicator-Name getter
-
-        Returns:
-            str or None: str if setted, otherwise None.
-        """
-        return self._comm_name
-
-    @staticmethod
-    def _tstx(v):
-        """test-set-timeout-tx
-
-        Args:
-            v (int or float): timeout-time-seconds.
-
-        Raises:
-            TypeError: raise if v is None.
-            ValueError: raise if v is not greater than 0.0.
-
-        Returns:
-            int or float: tested value
-        """
-        if v is None:
-            raise TypeError("Timeout-value require not None")
-        if v > 0.0:
-            return v
-        else:
-            raise ValueError("Timeout-value require > 0.0")
-
-    def set_timeout_t1(self, v):
-        """Timeout-T1 setter.
-
-        Args:
-            v (int or float): Timeout-T1 value.
-
-        Raises:
-            TypeError: if value is None.
-            ValueError: if value is not greater than 0.0.
-        """
-        self._timeout_t1 = self._tstx(v)
-
-    def set_timeout_t2(self, v):
-        """Timeout-T2 setter.
-
-        Args:
-            v (int or float): Timeout-T2 value.
-
-        Raises:
-            TypeError: if value is None.
-            ValueError: if value is not greater than 0.0.
-        """
-        self._timeout_t2 = self._tstx(v)
-
-    def set_timeout_t3(self, v):
-        """Timeout-T3 setter.
-
-        Args:
-            v (int or float): Timeout-T3 value.
-
-        Raises:
-            TypeError: if value is None.
-            ValueError: if value is not greater than 0.0.
-        """
-        self._timeout_t3 = self._tstx(v)
-
-    def set_timeout_t4(self, v):
-        """Timeout-T4 setter.
-
-        Args:
-            v (int or float): Timeout-T4 value.
-
-        Raises:
-            TypeError: if value is None.
-            ValueError: if value is not greater than 0.0.
-        """
-        self._timeout_t4 = self._tstx(v)
-
-    def set_timeout_t5(self, v):
-        """Timeout-T5 setter.
-
-        Args:
-            v (int or float): Timeout-T5 value.
-
-        Raises:
-            TypeError: if value is None.
-            ValueError: if value is not greater than 0.0.
-        """
-        self._timeout_t5 = self._tstx(v)
-
-    def set_timeout_t6(self, v):
-        """Timeout-T6 setter.
-
-        Args:
-            v (int or float): Timeout-T6 value.
-
-        Raises:
-            TypeError: if value is None.
-            ValueError: if value is not greater than 0.0.
-        """
-        self._timeout_t6 = self._tstx(v)
-
-    def set_timeout_t7(self, v):
-        """Timeout-T7 setter.
-
-        Args:
-            v (int or float): Timeout-T7 value.
-
-        Raises:
-            TypeError: if value is None.
-            ValueError: if value is not greater than 0.0.
-        """
-        self._timeout_t7 = self._tstx(v)
-
-    def set_timeout_t8(self, v):
-        """Timeout-T8 setter.
-
-        Args:
-            v (int or float): Timeout-T8 value.
-
-        Raises:
-            TypeError: if value is None.
-            ValueError: if value is not greater than 0.0.
-        """
-        self._timeout_t8 = self._tstx(v)
-
     def add_recv_primary_msg_listener(self, l):
-        self._recv_primary_msg_lstnrs.append(l)
+        self.__recv_primary_msg_lstnrs.append(l)
 
     def remove_recv_priary_msg_listener(self, l):
-        self._recv_primary_msg_lstnrs.remove(l)
+        self.__recv_primary_msg_lstnrs.remove(l)
 
     def _put_recv_primary_msg(self, recv_msg):
         if recv_msg is not None:
-            for lstnr in self._recv_primary_msg_lstnrs:
-                lstnr(self, recv_msg)
+            for lstnr in self.__recv_primary_msg_lstnrs:
+                lstnr(recv_msg, self)
 
     def add_recv_all_msg_listener(self, l):
-        self._recv_all_msg_lstnrs.append(l)
+        self.__recv_all_msg_lstnrs.append(l)
 
     def remove_recv_all_msg_listener(self, l):
-        self._recv_all_msg_lstnrs.remove(l)
+        self.__recv_all_msg_lstnrs.remove(l)
     
     def _put_recv_all_msg(self, recv_msg):
         if recv_msg is not None:
-            for lstnr in self._recv_all_msg_lstnrs:
-                lstnr(self, recv_msg)
+            for lstnr in self.__recv_all_msg_lstnrs:
+                lstnr(recv_msg, self)
     
     def add_sended_msg_listener(self, l):
-        self._sended_msg_lstnrs.append(l)
+        self.__sended_msg_lstnrs.append(l)
 
     def remove_sended_msg_listener(self, l):
-        self._sended_msg_lstnrs.remove(l)
+        self.__sended_msg_lstnrs.remove(l)
 
     def _put_sended_msg(self, sended_msg):
         if sended_msg is not None:
-            for lstnr in self._sended_msg_lstnrs:
-                lstnr(self, sended_msg)
+            for lstnr in self.__sended_msg_lstnrs:
+                lstnr(sended_msg, self)
     
-    def add_communicated_listener(self, l):
-        with self._comm_rlock:
-            self._communicated_lstnrs.append(l)
-            l(self, self._communicating)
+    def add_communicate_listener(self, l):
+        with self.__comm_rlock:
+            self.__communicate_lstnrs.append(l)
+            l(self.__communicating, self)
 
-    def remove_communicated_listener(self, l):
-        with self._comm_rlock:
-            self._communicated_lstnrs.remove(l)
+    def remove_communicate_listener(self, l):
+        with self.__comm_rlock:
+            self.__communicate_lstnrs.remove(l)
 
     def _put_communicated(self, communicating):
-        with self._comm_rlock:
-            if communicating != self._communicating:
-                self._communicating = communicating
-                for lstnr in self._communicated_lstnrs:
-                    lstnr(self, self._communicating)
-                with self._comm_condition:
-                    self._comm_condition.notify_all()
+        with self.__comm_rlock:
+            if communicating != self.__communicating:
+                self.__communicating = communicating
+                for lstnr in self.__communicate_lstnrs:
+                    lstnr(self.__communicating, self)
+                with self.__comm_condition:
+                    self.__comm_condition.notify_all()
 
+    @property
     def is_communicating(self):
-        with self._comm_rlock:
-            return self._communicating
-    
+        pass
+
+    @is_communicating.getter
+    def is_communicating(self):
+        with self.__comm_rlock:
+            return self.__communicating
+
     def add_error_listener(self, l):
-        self._error_listeners.append(l)
+        self.__error_listeners.append(l)
 
     def remove_error_listener(self, l):
-        self._error_listeners.remove(l)
+        self.__error_listeners.remove(l)
 
     def _put_error(self, e):
-        for lstnr in self._error_listeners:
-            lstnr(self, e)
+        for lstnr in self.__error_listeners:
+            lstnr(e, self)

@@ -1,3 +1,4 @@
+from socket import AI_PASSIVE
 import secs
 
 
@@ -12,66 +13,74 @@ class Secs1Message(secs.SecsMessage):
     def __init__(self, strm, func, wbit, secs2body, system_bytes, device_id, rbit):
         super(Secs1Message, self).__init__(strm, func, wbit, secs2body)
         self._system_bytes = system_bytes
-        self._device_id = device_id
-        self._rbit = rbit
-        self._cache_header10bytes = None
-        self._cache_str = None
-        self._cache_repr = None
-        self._cache_blocks = None
+        self.__device_id = int(device_id)
+        self.__rbit = bool(rbit)
+        self.__cache_header10bytes = None
+        self.__cache_str = None
+        self.__cache_repr = None
+        self.__cache_blocks = None
 
     def __str__(self):
-        if self._cache_str is None:
+        if self.__cache_str is None:
             vv = [
                 self._header10bytes_str(),
                 self._STR_LINESEPARATOR,
-                'S', str(self._strm),
-                'F', str(self._func)
+                'S', str(self.strm),
+                'F', str(self.func)
             ]
-            if self._wbit:
+            if self.wbit:
                 vv.append(' W')
-            if self._secs2body is not None:
+            if self.secs2body is not None:
                 vv.append(self._STR_LINESEPARATOR)
-                vv.append(self._secs2body.to_sml())
+                vv.append(self.secs2body.to_sml())
             vv.append('.')
-            self._cache_str = ''.join(vv)
-        return self._cache_str
+            self.__cache_str = ''.join(vv)
+        return self.__cache_str
 
     def __repr__(self):
-        if self._cache_repr is None:
+        if self.__cache_repr is None:
             vv = [
                 "{'header':", str(self._header10bytes()),
-                ",'strm':", str(self._strm),
-                ",'func':", str(self._func),
-                ",'wbit':", str(self._wbit)
+                ",'strm':", str(self.strm),
+                ",'func':", str(self.func),
+                ",'wbit':", str(self.wbit)
             ]
-            if self._secs2body is not None:
+            if self.secs2body is not None:
                 vv.append(",'secs2body':")
-                vv.append(repr(self._secs2body))
+                vv.append(repr(self.secs2body))
             vv.append("}")
-            self._cache_repr = ''.join(vv)
-        return self._cache_repr
+            self.__cache_repr = ''.join(vv)
+        return self.__cache_repr
 
     def _header10bytes(self):
-        if self._cache_header10bytes is None:
-            b0 = (self._device_id >> 8) & 0x7F
-            if self._rbit:
+        if self.__cache_header10bytes is None:
+            b0 = (self.device_id >> 8) & 0x7F
+            if self.rbit:
                 b0 |= 0x80
-            b1 = self._device_id & 0xFF
-            b2 = self._strm & 0x7F
-            if self._wbit:
+            b1 = self.device_id & 0xFF
+            b2 = self.strm & 0x7F
+            if self.wbit:
                 b2 |= 0x80
-            b3 = self._func & 0xFF
-            self._cache_header10bytes = bytes([
+            b3 = self.func & 0xFF
+            self.__cache_header10bytes = bytes([
                 b0, b1,
                 b2, b3,
                 0x00, 0x00,
                 self._system_bytes[0], self._system_bytes[1],
                 self._system_bytes[2], self._system_bytes[3]
             ])
-        return self._cache_header10bytes
+        return self.__cache_header10bytes
 
-    def device_id(self):
-        return self._device_id
+    def _device_id(self):
+        return self.__device_id
+
+    @property
+    def rbit(self):
+        pass
+
+    @rbit.getter
+    def rbit(self):
+        return self.__rbit
 
     def to_blocks(self):
 
@@ -98,13 +107,13 @@ class Secs1Message(secs.SecsMessage):
             x = sum([i for i in hh]) + sum([i for i in bb])
             return bytes([((x >> 8) & 0xFF), (x & 0xFF)])
         
-        if self._cache_blocks is None:
+        if self.__cache_blocks is None:
 
             h10bs = self._header10bytes()
-            if self._secs2body is None:
+            if self.secs2body is None:
                 bodybs = bytes()
             else:
-                bodybs = self._secs2body.to_bytes()
+                bodybs = self.secs2body.to_bytes()
 
             blocks = []
             pos = 0
@@ -128,9 +137,9 @@ class Secs1Message(secs.SecsMessage):
 
                 pos += shift
 
-            self._cache_blocks = tuple(blocks)
+            self.__cache_blocks = tuple(blocks)
 
-        return self._cache_blocks
+        return self.__cache_blocks
 
     @classmethod
     def from_blocks(cls, blocks):
@@ -141,15 +150,15 @@ class Secs1Message(secs.SecsMessage):
         bs = b''.join([(x.to_bytes())[11:-2] for x in blocks])
 
         v = Secs1Message(
-            blocks[0].get_stream(),
-            blocks[0].get_function(),
+            blocks[0].strm,
+            blocks[0].func,
             blocks[0].has_wbit(),
             secs.Secs2BodyBuilder.from_body_bytes(bs) if len(bs) > 0 else None,
             blocks[0].get_system_bytes(),
-            blocks[0].device_id(),
-            blocks[0].has_rbit()
+            blocks[0].device_id,
+            blocks[0].rbit
         )
-        v._cache_blocks = blocks
+        v.__cache_blocks = blocks
         return v
 
 
@@ -185,23 +194,83 @@ class Secs1MessageBlock():
     def to_bytes(self):
         return self._bytes
 
+    @property
     def device_id(self):
+        pass
+    
+    @device_id.getter
+    def device_id(self):
+        """Device-ID getter
+
+        Returns:
+            int: Device-ID
+        """
         bs = self._bytes[1:3]
         return ((bs[0] << 8) & 0x7F00) | bs[1]
 
-    def get_stream(self):
+    @property
+    def strm(self):
+        pass
+    
+    @strm.getter
+    def strm(self):
+        """Stream-Number getter.
+
+        Returns:
+            int: Stream-Number
+        """
         return self._bytes[3] & 0x7F
 
-    def get_function(self):
+    @property
+    def func(self):
+        pass
+
+    @func.getter
+    def func(self):
+        """Function-Number getter.
+
+        Returns:
+            int: Function-Number
+        """
         return self._bytes[4]
 
-    def has_rbit(self):
+    @property
+    def rbit(self):
+        pass
+
+    @rbit.getter
+    def rbit(self):
+        """R-Bit getter
+
+        Returns:
+            bool: True if has R-Bit
+        """
         return (self._bytes[1] & 0x80) == 0x80
 
-    def has_wbit(self):
+    @property
+    def wbit(self):
+        pass
+
+    @wbit.getter
+    def wbit(self):
+        """W-Bit getter
+
+        Returns:
+            bool: True if has W-Bit
+        """
         return (self._bytes[3] & 0x80) == 0x80
 
-    def has_ebit(self):
+    @property
+    def ebit(self):
+        pass
+
+    @ebit.getter
+    def ebit(self):
+        """E-Bit getter.
+
+        Returns:
+            bool: True if has E-Bit
+        """
         return (self._bytes[5] & 0x80) == 0x80
 
     def get_block_number(self):

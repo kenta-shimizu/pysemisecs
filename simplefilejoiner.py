@@ -15,7 +15,8 @@ if __name__ == '__main__':
         'hsmssscommunicator.py',
         'hsmsssactivecommunicator.py',
         'hsmssspassivecommunicator.py',
-        'secs1communicator.py'
+        'secs1communicator.py',
+        'gem.py'
     )
 
     try:

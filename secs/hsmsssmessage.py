@@ -110,15 +110,15 @@ class HsmsSsMessage(secs.SecsMessage):
             if self._control_type == HsmsSsControlType.DATA:
                 vv.extend([
                     self._STR_LINESEPARATOR,
-                    'S', str(self._strm),
-                    'F', str(self._func)
+                    'S', str(self.strm),
+                    'F', str(self.func)
                 ])
-                if self._wbit:
+                if self.wbit:
                     vv.append(' W')
-                if self._secs2body is not None:
+                if self.secs2body is not None:
                     vv.extend([
                         self._STR_LINESEPARATOR,
-                        self._secs2body.to_sml()
+                        self.secs2body.to_sml()
                     ])
                 vv.append('.')
             self._cache_str = ''.join(vv)
@@ -129,12 +129,12 @@ class HsmsSsMessage(secs.SecsMessage):
             vv = ["{'header':", str(self._header10bytes())]
             if self._control_type == HsmsSsControlType.DATA:
                 vv.extend([
-                    ",'strm':", str(self._strm),
-                    ",'func':", str(self._func),
-                    ",'wbit':", str(self._wbit)
+                    ",'strm':", str(self.strm),
+                    ",'func':", str(self.func),
+                    ",'wbit':", str(self.wbit)
                 ])
-                if self._secs2body is not None:
-                    vv.extend([",'secs2body':", repr(self._secs2body)])
+                if self.secs2body is not None:
+                    vv.extend([",'secs2body':", repr(self.secs2body)])
             vv.append("}")
             self._cache_repr = ''.join(vv)
         return self._cache_repr
@@ -142,8 +142,8 @@ class HsmsSsMessage(secs.SecsMessage):
     def _msg_length(self):
         if self._cache_msg_length is None:
             i = len(self._header10bytes())
-            if self._secs2body is not None:
-                i += len(self._secs2body.to_bytes())
+            if self.secs2body is not None:
+                i += len(self.secs2body.to_bytes())
             self._cache_msg_length = i
 
         return self._cache_msg_length
@@ -174,7 +174,7 @@ class HsmsSsMessage(secs.SecsMessage):
                     msglen & 0xFF
                 ]),
                 self._header10bytes(),
-                b'' if self._secs2body is None else self._secs2body.to_bytes()
+                b'' if self.secs2body is None else self.secs2body.to_bytes()
             ]
             self._cache_bytes = b''.join(vv)
         return self._cache_bytes
@@ -216,18 +216,18 @@ class HsmsSsDataMessage(HsmsSsMessage):
 
     def __init__(self, strm, func, wbit, secs2body, system_bytes, session_id):
         super(HsmsSsDataMessage, self).__init__(strm, func, wbit, secs2body, system_bytes, HsmsSsControlType.DATA)
-        self._session_id = session_id
+        self.__session_id = session_id
         self._cache_header10bytes = None
 
     def _header10bytes(self):
         if self._cache_header10bytes is None:
-            b2 = self._strm
-            if self._wbit:
+            b2 = self.strm
+            if self.wbit:
                 b2 |= 0x80
             self._cache_header10bytes = bytes([
-                (self._session_id >> 8) & 0x7F,
-                self._session_id & 0xFF,
-                b2, self._func,
+                (self.session_id >> 8) & 0x7F,
+                self.session_id & 0xFF,
+                b2, self.func,
                 self._control_type[0], self._control_type[1],
                 self._system_bytes[0], self._system_bytes[1],
                 self._system_bytes[2], self._system_bytes[3]
@@ -235,12 +235,16 @@ class HsmsSsDataMessage(HsmsSsMessage):
         
         return self._cache_header10bytes
 
+    @property
     def session_id(self):
-        return self._session_id
+        pass
 
-    def device_id(self):
-        return self._session_id
+    @session_id.getter
+    def session_id(self):
+        return self.__session_id
 
+    def _device_id(self):
+        return self.session_id
 
 class HsmsSsControlMessage(HsmsSsMessage):
 

@@ -27,3 +27,5 @@ from secs.hsmssspassivecommunicator import HsmsSsPassiveCommunicator
 from secs.hsmsssactivecommunicator import HsmsSsActiveCommunicator
 
 from secs.secs1communicator import *
+
+from secs.gem import *

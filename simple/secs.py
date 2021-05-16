@@ -1,8 +1,8 @@
-import socket
-import struct
-import os
 import re
 import threading
+import struct
+import socket
+import os
 import concurrent.futures
 
 
@@ -1222,24 +1222,39 @@ class SecsCommunicatorError(Exception):
         super(SecsCommunicatorError, self).__init__(msg)
 
 
-class SecsSendMessageError(Exception):
+class SecsWithReferenceMessageError(SecsCommunicatorError):
 
     def __init__(self, msg, ref_msg):
-        super(SecsSendMessageError, self).__init__(msg)
+        super(SecsWithReferenceMessageError, self).__init__(msg)
+        self._msg = msg
         self._ref_msg = ref_msg
 
     def get_reference_message(self):
         return self._ref_msg
 
+    def __str__(self):
+        return (self.__class__.__name__ + '('
+        + repr(self._msg) + ','
+        + self._ref_msg._header10bytes_str()
+        + ')')
 
-class SecsWaitReplyError(Exception):
+    def __repr__(self):
+        return (self.__class__.__name__ + '('
+        + repr(self._msg) + ','
+        + repr(self._ref_msg._header10bytes())
+        + ')')
+
+
+class SecsSendMessageError(SecsWithReferenceMessageError):
 
     def __init__(self, msg, ref_msg):
-        super(SecsWaitReplyError, self).__init__(msg)
-        self._ref_msg = ref_msg
+        super(SecsSendMessageError, self).__init__(msg, ref_msg)
 
-    def get_reference_message(self):
-        return self._ref_msg
+
+class SecsWaitReplyError(SecsWithReferenceMessageError):
+
+    def __init__(self, msg, ref_msg):
+        super(SecsWaitReplyError, self).__init__(msg, ref_msg)
 
 
 class AbstractQueuing:
@@ -1789,7 +1804,7 @@ class AbstractSecsCommunicator:
     def _put_recv_primary_msg(self, recv_msg):
         if recv_msg is not None:
             for lstnr in self._recv_primary_msg_lstnrs:
-                lstnr(self, recv_msg)
+                lstnr(recv_msg, self)
 
     def add_recv_all_msg_listener(self, l):
         self._recv_all_msg_lstnrs.append(l)
@@ -1800,7 +1815,7 @@ class AbstractSecsCommunicator:
     def _put_recv_all_msg(self, recv_msg):
         if recv_msg is not None:
             for lstnr in self._recv_all_msg_lstnrs:
-                lstnr(self, recv_msg)
+                lstnr(recv_msg, self)
 
     def add_sended_msg_listener(self, l):
         self._sended_msg_lstnrs.append(l)
@@ -1811,7 +1826,7 @@ class AbstractSecsCommunicator:
     def _put_sended_msg(self, sended_msg):
         if sended_msg is not None:
             for lstnr in self._sended_msg_lstnrs:
-                lstnr(self, sended_msg)
+                lstnr(sended_msg, self)
 
     def add_communicated_listener(self, l):
         with self._comm_rlock:
@@ -1827,7 +1842,7 @@ class AbstractSecsCommunicator:
             if communicating != self._communicating:
                 self._communicating = communicating
                 for lstnr in self._communicated_lstnrs:
-                    lstnr(self, self._communicating)
+                    lstnr(self._communicating, self)
                 with self._comm_condition:
                     self._comm_condition.notify_all()
 
@@ -1843,7 +1858,7 @@ class AbstractSecsCommunicator:
 
     def _put_error(self, e):
         for lstnr in self._error_listeners:
-            lstnr(self, e)
+            lstnr(e, self)
 
 
 class HsmsSsCommunicatorError(SecsCommunicatorError):
@@ -2189,7 +2204,7 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
     def add_hsmsss_communicate_listener(self, l):
         with self._hsmsss_comm_rlock:
             self._hsmsss_comm_lstnrs.append(l)
-            l(self, self._hsmsss_comm)
+            l(self._hsmsss_comm, self)
 
     def remove_hsmsss_communicate_listener(self, l):
         with self._hsmsss_comm_rlock:
@@ -2200,7 +2215,7 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
             if state != self._hsmsss_comm:
                 self._hsmsss_comm = state
                 for lstnr in self._hsmsss_comm_lstnrs:
-                    lstnr(self, self._hsmsss_comm)
+                    lstnr(self._hsmsss_comm, self)
                 self._put_communicated(state == HsmsSsCommunicateState.SELECTED)
                 if callback is not None:
                     callback()

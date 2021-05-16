@@ -101,7 +101,7 @@ class HsmsSsConnection:
                             pos += r
 
                             while pos < size:
-                                r = llq.put_to_list(heads, pos, size, self._parent._timeout_t8)
+                                r = llq.put_to_list(heads, pos, size, self._parent.timeout_t8)
                                 if r < 0:
                                     raise HsmsSsCommunicatorError("T8-Timeout")
                                 else:
@@ -115,7 +115,7 @@ class HsmsSsConnection:
                                 | heads[3]) - 10
 
                             while pos < size:
-                                r = llq.put_to_list(bodys, pos, size, self._parent._timeout_t8)
+                                r = llq.put_to_list(bodys, pos, size, self._parent.timeout_t8)
                                 if r < 0:
                                     raise HsmsSsCommunicatorError("T8-Timeout")
                                 else:
@@ -172,10 +172,10 @@ class HsmsSsConnection:
         ctrl_type = msg.get_control_type()
         if ctrl_type == secs.HsmsSsControlType.DATA:
             if msg.has_wbit():
-                timeout_tx = self._parent._timeout_t3
+                timeout_tx = self._parent.timeout_t3
         elif (ctrl_type == secs.HsmsSsControlType.SELECT_REQ
             or ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ):
-            timeout_tx = self._parent._timeout_t6
+            timeout_tx = self._parent.timeout_t6
 
         def _send(msg):
             with self._send_lock:
@@ -239,15 +239,16 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         super(AbstractHsmsSsCommunicator, self).__init__(session_id, is_equip, **kwargs)
         self._hsmsss_connection = None
 
-        self._hsmsss_connection_rlock = threading.Lock()
+        self._hsmsss_connection_rlock = threading.RLock()
 
         self._hsmsss_comm_rlock = threading.RLock()
         self._hsmsss_comm = HsmsSsCommunicateState.NOT_CONNECT
     
         self._hsmsss_comm_lstnrs = list()
 
-        # TODO
-        # add
+        hsmssscomml = kwargs.get('hsmsss_communicate', None)
+        if hsmssscomml is not None:
+            self.add_hsmsss_communicate_listener(hsmssscomml)
 
     def __str__(self):
         ipaddr = self.get_ipaddress()
@@ -347,7 +348,7 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
     def add_hsmsss_communicate_listener(self, l):
         with self._hsmsss_comm_rlock:
             self._hsmsss_comm_lstnrs.append(l)
-            l(self, self._hsmsss_comm)
+            l(self._hsmsss_comm, self)
 
     def remove_hsmsss_communicate_listener(self, l):
         with self._hsmsss_comm_rlock:
@@ -358,7 +359,7 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
             if state != self._hsmsss_comm:
                 self._hsmsss_comm = state
                 for lstnr in self._hsmsss_comm_lstnrs:
-                    lstnr(self, self._hsmsss_comm)
+                    lstnr(self._hsmsss_comm, self)
                 self._put_communicated(state == HsmsSsCommunicateState.SELECTED)
                 if callback is not None:
                     callback()

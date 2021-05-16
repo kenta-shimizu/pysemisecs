@@ -6,7 +6,7 @@ import secs
 
 class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
-    _PROTOCOL_NAME = 'HSMS-SS-ACTIVE'
+    __PROTOCOL_NAME = 'HSMS-SS-ACTIVE'
 
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
         """[summary]
@@ -22,22 +22,24 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
         super(HsmsSsActiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
 
-        self._tpe = concurrent.futures.ThreadPoolExecutor(max_workers=8)
-        self._ipaddr = (ip_address, port)
+        self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+        self.__ipaddr = (ip_address, port)
+
         self._waiting_cdt = threading.Condition()
+        self.__open_close_local_lock = threading.Lock()
 
     def get_protocol(self):
-        return self._PROTOCOL_NAME
+        return self.__PROTOCOL_NAME
 
     def get_ipaddress(self):
-        return self._ipaddr
+        return self.__ipaddr
 
     def _open(self):
 
-        with self._open_close_rlock:
-            if self.is_closed():
+        with self.__open_close_local_lock:
+            if self.is_closed:
                 raise RuntimeError("Already closed")
-            if self.is_open():
+            if self.is_open:
                 raise RuntimeError("Already opened")
             self._set_opened()
         
@@ -45,7 +47,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
             with secs.CallbackQueuing(self._put_recv_primary_msg) as pq:
 
-                while self.is_open():
+                while self.is_open:
 
                     try:
 
@@ -146,22 +148,22 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                     finally:
                         self._put_hsmsss_comm_state_to_not_connected()
 
-                    if self.is_closed():
+                    if self.is_closed:
                         return None
 
                     with self._waiting_cdt:
-                        self._waiting_cdt.wait(self._timeout_t5)
+                        self._waiting_cdt.wait(self.timeout_t5)
 
-        self._tpe.submit(_f)
+        self.__tpe.submit(_f)
 
     def _close(self):
 
-        with self._open_close_rlock:
-            if self.is_closed():
+        with self.__open_close_local_lock:
+            if self.is_closed:
                 return
             self._set_closed()
 
         with self._waiting_cdt:
             self._waiting_cdt.notify_all()
 
-        self._tpe.shutdown(wait=True, cancel_futures=True)
+        self.__tpe.shutdown(wait=True, cancel_futures=True)

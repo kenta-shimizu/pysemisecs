@@ -10,7 +10,7 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
 - SECS-I (SEMI-E4) builing...
 - SECS-II (SEMI-E5)
-- GEM (SEMI-E30, partially) building...
+- GEM (SEMI-E30, partially)
 - HSMS-SS (SEMI-E37.1)
 - [SML (PEER Group)](https://www.peergroup.com/expertise/resources/secs-message-language/)
 
@@ -30,7 +30,7 @@ This library is SEMI-SECS-communicate implementation on Python3.
 - For use HSMS-SS-Passive example
 
   ```python
-  passive = HsmsSsPassiveCommunicator(
+  passive = secs.HsmsSsPassiveCommunicator(
       ip_address='127.0.0.1',
       port=5000,
       session_id=10,
@@ -39,15 +39,15 @@ This library is SEMI-SECS-communicate implementation on Python3.
       timeout_t6=5.0,
       timeout_t7=10.0,
       timeout_t8=6.0,
-      name='equip-passive-comm'
-  )
+      name='equip-passive-comm')
+
   passive.open()
   ```
 
 - For use HSMS-SS-Active example
 
   ```python
-  active = HsmsSsActiveCommunicator(
+  active = secs.HsmsSsActiveCommunicator(
       ip_address='127.0.0.1',
       port=5000,
       session_id=10,
@@ -56,8 +56,8 @@ This library is SEMI-SECS-communicate implementation on Python3.
       timeout_t5=10.0,
       timeout_t6=5.0,
       timeout_t8=6.0,
-      name='host-acitve-comm'
-  )
+      name='host-acitve-comm')
+
   active.open()
   ```
 
@@ -115,4 +115,15 @@ building...
 
 ## GEM
 
-building...
+Access from `.gem` property.
+
+### Others
+
+```python
+passive.gem.s9f1(ref_msg)
+passive.gem.s9f3(ref_msg)
+passive.gem.s9f5(ref_msg)
+passive.gem.s9f7(ref_msg)
+passive.gem.s9f9(ref_msg)
+passive.gem.s9f11(ref_msg)
+```
