@@ -67,7 +67,7 @@ This library is SEMI-SECS-communicate implementation on Python3.
   # building...
   ```
 
-Notes: To shutdown program, must `AbstractSecsCommunicator.close()`, or use a `with` statement.
+Notes: To shutdown program, must `.close()`, or use a `with` statement.
 
 ## Send Primary-Message and receive Reply-Message
 
@@ -92,7 +92,7 @@ Notes: To shutdown program, must `AbstractSecsCommunicator.close()`, or use a `w
   )
   ```
 
-  `AbstractSecsCommunicator.send` is blocking-method.  
+  `.send()` is blocking-method.  
   Blocking until Reply-Message received.  
   Reply-Message has value if W-Bit is `True`, otherwise `None`  
   If T3-Timeout, raise `SecsWaitReplyMessageError`.
@@ -109,9 +109,24 @@ Notes: To shutdown program, must `AbstractSecsCommunicator.close()`, or use a `w
   active.add_recv_primary_msg_listener(recv_primary_msg)
   ```
 
-2. Parse Primary-Message
+2. Parse Message
 
   ```python
+  # Receive
+  # S5F1 W
+  # <L
+  #   <B 0x81>
+  #   <U2 1001>
+  #   <A "ON FIRE">
+  # >.
+
+  >>> primary_msg.strm
+  5
+  >>> primary_msg.func
+  1
+  >>> primary_msg.wbit
+  True
+  
   ```
 
 3. Send Reply-Message
@@ -123,7 +138,7 @@ Notes: To shutdown program, must `AbstractSecsCommunicator.close()`, or use a `w
       primary=primary_msg,
       strm=5,
       func=2,
-      wbit=True,
+      wbit=False,
       secs2body=('B', [0x0])
   )
   ```
@@ -151,7 +166,7 @@ Notes: To shutdown program, must `AbstractSecsCommunicator.close()`, or use a `w
 
 ## GEM
 
-Access from `AbstractSecsCommunicator.gem` property.
+Access from `.gem` property.
 
 ### Others
 

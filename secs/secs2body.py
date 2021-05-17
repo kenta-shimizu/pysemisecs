@@ -49,13 +49,60 @@ class AbstractSecs2Body:
     def __next__(self):
         return next(self._value)
 
-    def get_type(self):
-        """ITEM type getter.
+    @property
+    def type(self):
+        pass
+
+    @type.getter
+    def type(self):
+        """[summary]
+
+        Alias of get_type()
 
         Returns:
             str: 'L', 'A', 'BOOLEAN', 'B', 'I1', 'I2', 'I4', 'I8', 'U1', 'U2', 'U4', 'U8', 'F4', 'F8'
         """
         return self._type[0]
+
+    def get_type(self, *indices):
+        """ITEM type getter.
+
+        Returns:
+            str: 'L', 'A', 'BOOLEAN', 'B', 'I1', 'I2', 'I4', 'I8', 'U1', 'U2', 'U4', 'U8', 'F4', 'F8'
+        """
+        v = self
+        for i in indices:
+            v = v[i]
+
+        return v._type[0]
+
+    @property
+    def value(self):
+        pass
+
+    @value.getter
+    def value(self):
+        """value getter.
+
+        Returns:
+            Any: value
+        """
+        return self._value
+
+    def get_value(self, *indices):
+        """value getter.
+
+        Returns:
+            Any: seek value.
+        """
+        v = self
+        for i in indices:
+            v = v[i]
+
+        if isinstance(v, AbstractSecs2Body):
+            return v._value
+        else:
+            return v
     
     def to_sml(self):
         """SML getter.
