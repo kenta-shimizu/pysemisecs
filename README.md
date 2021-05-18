@@ -1,6 +1,6 @@
 # pysemisecs
 
-Now buiding...
+buiding...
 
 ## Introduction
 
@@ -29,140 +29,163 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
 - For use HSMS-SS-Passive example
 
-  ```python
-  passive = secs.HsmsSsPassiveCommunicator(
-      ip_address='127.0.0.1',
-      port=5000,
-      session_id=10,
-      is_equip=True,
-      timeout_t3=45.0,
-      timeout_t6=5.0,
-      timeout_t7=10.0,
-      timeout_t8=6.0,
-      name='equip-passive-comm')
+```python
+    passive = secs.HsmsSsPassiveCommunicator(
+        ip_address='127.0.0.1',
+        port=5000,
+        session_id=10,
+        is_equip=True,
+        timeout_t3=45.0,
+        timeout_t6=5.0,
+        timeout_t7=10.0,
+        timeout_t8=6.0,
+        name='equip-passive-comm')
 
-  passive.open()
-  ```
+    passive.open()
+```
 
 - For use HSMS-SS-Active example
 
-  ```python
-  active = secs.HsmsSsActiveCommunicator(
-      ip_address='127.0.0.1',
-      port=5000,
-      session_id=10,
-      is_equip=False,
-      timeout_t3=45.0,
-      timeout_t5=10.0,
-      timeout_t6=5.0,
-      timeout_t8=6.0,
-      name='host-acitve-comm')
+```python
+    active = secs.HsmsSsActiveCommunicator(
+        ip_address='127.0.0.1',
+        port=5000,
+        session_id=10,
+        is_equip=False,
+        timeout_t3=45.0,
+        timeout_t5=10.0,
+        timeout_t6=5.0,
+        timeout_t8=6.0,
+        name='host-acitve-comm')
 
-  active.open()
-  ```
+    active.open()
+```
 
 - For use SECS-I example
 
-  ```python
-  # building...
-  ```
+```python
+    # building...
+```
 
-Notes: To shutdown program, must `.close()`, or use a `with` statement.
+  Notes: To shutdown, must `.close()` or use a `with` statement.
 
 ## Send Primary-Message and receive Reply-Message
 
-  ```python
-  # Send
-  # S5F1 W
-  # <L
-  #   <B 0x81>
-  #   <U2 1001>
-  #   <A "ON FIRE">
-  # >.
+```python
+    # Send
+    # S5F1 W
+    # <L
+    #   <B 0x81>
+    #   <U2 1001>
+    #   <A "ON FIRE">
+    # >.
 
-  reply_msg = passive.send(
-      strm=5,
-      func=1,
-      wbit=True,
-      secs2body=('L', [
-          ('B' , [0x81]),
-          ('U2', [1001]),
-          ('A' , "ON FIRE")
-      ])
-  )
-  ```
+    reply_msg = passive.send(
+        strm=5,
+        func=1,
+        wbit=True,
+        secs2body=('L', [
+            ('B' , [0x81]),
+            ('U2', [1001]),
+            ('A' , "ON FIRE")
+        ])
+    )
+```
 
-  `.send()` is blocking-method.  
-  Blocking until Reply-Message received.  
-  Reply-Message has value if W-Bit is `True`, otherwise `None`  
-  If T3-Timeout, raise `SecsWaitReplyMessageError`.
+`.send()` is blocking-method.  
+Blocking until Reply-Message received.  
+Reply-Message has value if W-Bit is `True`, otherwise `None`  
+If T3-Timeout, raise `SecsWaitReplyMessageError`.
 
 
 ## Received Primary-Message, parse, and send Reply-Message
 
 1. Add listener to receive Primary-Message
 
-  ```python
-  def recv_primary_msg(primary_msg, comm):
-      # something...
+```python
+    def recv_primary_msg(primary_msg, comm):
+        # something...
 
-  active.add_recv_primary_msg_listener(recv_primary_msg)
-  ```
+    active.add_recv_primary_msg_listener(recv_primary_msg)
+```
 
 2. Parse Message
 
-  ```python
-  # Receive
-  # S5F1 W
-  # <L
-  #   <B 0x81>
-  #   <U2 1001>
-  #   <A "ON FIRE">
-  # >.
+```python
+    # Receive
+    # S5F1 W
+    # <L
+    #   <B 0x81>
+    #   <U2 1001>
+    #   <A "ON FIRE">
+    # >.
 
-  >>> primary_msg.strm
-  5
-  >>> primary_msg.func
-  1
-  >>> primary_msg.wbit
-  True
-  
-  ```
+    >>> primary_msg.strm
+    5
+    >>> primary_msg.func
+    1
+    >>> primary_msg.wbit
+    True
+    >>> primary_msg.secs2body.type
+    L
+    >>> primary_msg.secs2body[0].type
+    B
+    >>> primary_msg.secs2body[0].value
+    b'\x81'
+    >>> primary_msg.secs2body.get_value(0)
+    b'\x81'
+    >>> primary_msg.secs2body[0][0]
+    129
+    >>> primary_msg.secs2body.get_value(0, 0)
+    129
+    >>> primary_msg.secs2body[1].value
+    (1001,)
+    >>> primary_msg.secs2body[1][0]
+    1001
+    >>> primary_msg.secs2body.get_value(1, 0)
+    1001
+    >>> primary_msg.secs2body[2].value
+    ON FIRE
+    >>> primary_msg.secs2body.get_value(2)
+    ON FIRE
+    >>> len(primary_msg.secs2body)
+    3
+```
 
 3. Send Reply-Message
 
-  ```python
-  # Reply S5F2 <B 0x0>.
+```python
+    # Reply S5F2 <B 0x0>.
 
-  comm.reply(
-      primary=primary_msg,
-      strm=5,
-      func=2,
-      wbit=False,
-      secs2body=('B', [0x0])
-  )
-  ```
+    comm.reply(
+        primary=primary_msg,
+        strm=5,
+        func=2,
+        wbit=False,
+        secs2body=('B', [0x0])
+    )
+```
 
 ## SML
 
 - Send Primary-Message
 
-  ```python
-  active.send_sml('S1F1 W.')
-  ```
+```python
+    reply_msg = active.send_sml('S1F1 W.')
+```
 
 - Send Reply-Message
 
-  ```python
-  passive.reply_sml(
-      primary_msg,
-      'S1F2          ' +
-      '<L            ' +
-      '  <A "MDLN-A">' +
-      '  <A "000001">' +
-      '>.            '
-  )
-  ```
+```python
+    passive.reply_sml(
+        primary_msg,
+        'S1F2          ' +
+        '<L            ' +
+        '  <A "MDLN-A">' +
+        '  <A "000001">' +
+        '>.            '
+    )
+```
 
 ## GEM
 
@@ -171,10 +194,10 @@ Access from `.gem` property.
 ### Others
 
 ```python
-passive.gem.s9f1(ref_msg)
-passive.gem.s9f3(ref_msg)
-passive.gem.s9f5(ref_msg)
-passive.gem.s9f7(ref_msg)
-passive.gem.s9f9(ref_msg)
-passive.gem.s9f11(ref_msg)
+    passive.gem.s9f1(ref_msg)
+    passive.gem.s9f3(ref_msg)
+    passive.gem.s9f5(ref_msg)
+    passive.gem.s9f7(ref_msg)
+    passive.gem.s9f9(ref_msg)
+    passive.gem.s9f11(ref_msg)
 ```
