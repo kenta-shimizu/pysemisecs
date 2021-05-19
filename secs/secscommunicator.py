@@ -1,5 +1,4 @@
 import threading
-from types import GetSetDescriptorType
 import secs
 
 

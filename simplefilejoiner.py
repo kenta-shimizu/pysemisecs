@@ -1,7 +1,10 @@
 
 if __name__ == '__main__':
 
-    output_file = './simple/secs.py'
+    output_files = [
+        './simple/secs.py',
+        './example/secs.py'
+    ]
 
     target = 'secs'
 
@@ -20,8 +23,6 @@ if __name__ == '__main__':
     )
 
     try:
-        print('try-write: ' + output_file)
-
         bf_imports = list()
         bf_lines = list()
 
@@ -43,22 +44,26 @@ if __name__ == '__main__':
 
         targetpath = target + '.'
 
-        with open(output_file, mode='w') as fp:
+        for output_file in output_files:
 
-            for line in set(bf_imports):
-                fp.write(line)
-                fp.write('\n')
+            print('try-write: ' + output_file)
 
-            for line in bf_lines:
-                s = line.rstrip().replace(targetpath, '')
-                fp.write(s)
-                fp.write('\n')
+            with open(output_file, mode='w') as fp:
 
-            fp.write('\n\n')
-            fp.write("if __name__ == '__main__':\n")
-            fp.write("    print('write here')\n")
+                for line in set(bf_imports):
+                    fp.write(line)
+                    fp.write('\n')
 
-        print('wrote: ' + output_file)
+                for line in bf_lines:
+                    s = line.rstrip().replace(targetpath, '')
+                    fp.write(s)
+                    fp.write('\n')
+
+                fp.write('\n\n')
+                fp.write("if __name__ == '__main__':\n")
+                fp.write("    print('write here')\n\n")
+
+            print('wrote: ' + output_file)
     
     except Exception as e:
         print(e)

@@ -1,4 +1,3 @@
-from socket import AI_PASSIVE
 import secs
 
 

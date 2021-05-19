@@ -94,7 +94,7 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
 `.send()` is blocking-method.  
 Blocking until Reply-Message received.  
-Reply-Message has value if W-Bit is `True`, otherwise `None`  
+Reply-Message has value if W-Bit is `True`, otherwise `None`.  
 If T3-Timeout, raise `SecsWaitReplyMessageError`.
 
 
@@ -138,18 +138,24 @@ If T3-Timeout, raise `SecsWaitReplyMessageError`.
     129
     >>> primary_msg.secs2body.get_value(0, 0)
     129
+    >>> primary_msg.secs2body[1].type
+    U2
     >>> primary_msg.secs2body[1].value
     (1001,)
     >>> primary_msg.secs2body[1][0]
     1001
     >>> primary_msg.secs2body.get_value(1, 0)
     1001
+    >>> primary_msg.secs2body[2].type
+    A
     >>> primary_msg.secs2body[2].value
     ON FIRE
     >>> primary_msg.secs2body.get_value(2)
     ON FIRE
     >>> len(primary_msg.secs2body)
     3
+    >>> [v.value for v in primary_msg.secs2body]
+    [b'\x81', (1001,), 'ON FIRE']
 ```
 
 3. Send Reply-Message
@@ -194,6 +200,14 @@ Access from `.gem` property.
 ### Others
 
 ```python
+    commack = active.gem.s1f13()
+    oflack  = active.gem.s1f15()
+    onlack  = active.gem.s1f17()
+
+    passive.gem.s1f14(primary_msg, secs.COMMACK.OK)
+    passive.gem.s1f16(primary_msg, secs.OFLACK.OK)
+    passive.gem.s1f18(primary_msg, secs.ONLACK.OK)
+
     passive.gem.s9f1(ref_msg)
     passive.gem.s9f3(ref_msg)
     passive.gem.s9f5(ref_msg)
