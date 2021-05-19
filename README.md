@@ -205,7 +205,7 @@ Access from `.gem` property.
     onlack  = active.gem.s1f17()
 
     passive.gem.s1f14(primary_msg, secs.COMMACK.OK)
-    passive.gem.s1f16(primary_msg, secs.OFLACK.OK)
+    passive.gem.s1f16(primary_msg)
     passive.gem.s1f18(primary_msg, secs.ONLACK.OK)
 
     passive.gem.s9f1(ref_msg)
