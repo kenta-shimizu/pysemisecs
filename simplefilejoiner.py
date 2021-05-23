@@ -1,6 +1,7 @@
 
-if __name__ == '__main__':
 
+if __name__ == '__main__':
+    
     output_files = [
         './simple/secs.py',
         './example/secs.py'
@@ -8,7 +9,7 @@ if __name__ == '__main__':
 
     target = 'secs'
 
-    files = (
+    files = [
         'secs2body.py',
         'smlparser.py',
         'secsmessage.py',
@@ -20,7 +21,7 @@ if __name__ == '__main__':
         'hsmssspassivecommunicator.py',
         'secs1communicator.py',
         'gem.py'
-    )
+    ]
 
     try:
         bf_imports = list()

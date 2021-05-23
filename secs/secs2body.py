@@ -41,7 +41,10 @@ class AbstractSecs2Body:
         return len(self._value)
 
     def __getitem__(self, item):
-        return self._value[item]
+        try:
+            return self._value[item]
+        except IndexError as e:
+            raise Secs2BodyParseError(e)
 
     def __iter__(self):
         return iter(self._value)
@@ -67,14 +70,23 @@ class AbstractSecs2Body:
     def get_type(self, *indices):
         """ITEM type getter.
 
+        Raises:
+            Secs2BodyParseError: if IndexError or TypeError.
+        
         Returns:
             str: 'L', 'A', 'BOOLEAN', 'B', 'I1', 'I2', 'I4', 'I8', 'U1', 'U2', 'U4', 'U8', 'F4', 'F8'
         """
-        v = self
-        for i in indices:
-            v = v[i]
+        try:
+            v = self
+            for i in indices:
+                v = v[i]
 
-        return v._type[0]
+            return v._type[0]
+            
+        except IndexError as e:
+            raise Secs2BodyParseError(e)
+        except TypeError as e:
+            raise Secs2BodyParseError(e)
 
     @property
     def value(self):
@@ -92,12 +104,21 @@ class AbstractSecs2Body:
     def get_value(self, *indices):
         """value getter.
 
+        Raises:
+            Secs2BodyParseError: if IndexError or TypeError.
+
         Returns:
             Any: seek value.
         """
-        v = self
-        for i in indices:
-            v = v[i]
+        try:
+            v = self
+            for i in indices:
+                v = v[i]
+            
+        except IndexError as e:
+            raise Secs2BodyParseError(e)
+        except TypeError as e:
+            raise Secs2BodyParseError(e)
 
         if isinstance(v, AbstractSecs2Body):
             return v._value

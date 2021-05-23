@@ -39,6 +39,9 @@ This library is SEMI-SECS-communicate implementation on Python3.
         timeout_t6=5.0,
         timeout_t7=10.0,
         timeout_t8=6.0,
+        gem_mdln='MDLN-A',
+        gem_softrev='000001',
+        gem_clock_type=secs.ClockType.A16,
         name='equip-passive-comm')
 
     passive.open()
@@ -56,6 +59,7 @@ This library is SEMI-SECS-communicate implementation on Python3.
         timeout_t5=10.0,
         timeout_t6=5.0,
         timeout_t8=6.0,
+        gem_clock_type=secs.ClockType.A16,
         name='host-acitve-comm')
 
     active.open()
@@ -196,6 +200,46 @@ If T3-Timeout, raise `SecsWaitReplyMessageError`.
 ## GEM
 
 Access from `.gem` property.
+
+### Clock
+
+- Send S2F17 and receive reply, parse to datetime
+
+```python
+    clock = passive.gem.s2f17()
+    dt = clock.to_datetime()
+```
+
+- Reply S2F18 Now examples
+
+```python
+    tiack = active.gem.s2f18Now(primary_s2f17_msg)
+    tiack = active.gem.s2f18(primary_s2f17_msg, secs.Clock.now())
+    tiack = active.gem.s2f18(primary_s2f17_msg, secs.Clock(datetime.datetime.now()))
+```
+
+- Send S2F31 Now examples
+
+```puthon
+    tiack = active.gem.s2f31Now()
+    tiack = active.gem.s2f31(secs.Clock.now())
+    tiack = active.gem.s2f31(secs.Clock(datetime.datetime.now()))
+```
+
+- Receive S2F31, parse to datetime, reply S2F32
+
+```python
+    clock clock = secs.Clock.from_ascii(primary_s2f31_msg.secs2body)
+    dt = clock.to_datetime()
+    passive.gem.s2f32(primary_s2f31_msg, TIACK.OK)
+```
+
+TimeFormat (A[12] or A[16]) can be set from `.clock_type` property
+
+```python
+    passive.gem.clock_type = secs.ClockType.A12
+    passive.gem.clock_type = secs.ClockType.A16
+```
 
 ### Others
 
