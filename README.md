@@ -203,7 +203,7 @@ Access from `.gem` property.
 
 ### Clock
 
-- Send S2F17 and receive reply, parse to datetime
+- Send S2F17 and receive reply, parse to `datetime`
 
 ```python
     clock = passive.gem.s2f17()
@@ -226,7 +226,7 @@ Access from `.gem` property.
     tiack = active.gem.s2f31(secs.Clock(datetime.datetime.now()))
 ```
 
-- Receive S2F31, parse to datetime, reply S2F32
+- Receive S2F31, parse to `datetime`, reply S2F32
 
 ```python
     clock clock = secs.Clock.from_ascii(primary_s2f31_msg.secs2body)
