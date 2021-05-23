@@ -231,7 +231,7 @@ Access from `.gem` property.
 ```python
     clock clock = secs.Clock.from_ascii(primary_s2f31_msg.secs2body)
     dt = clock.to_datetime()
-    passive.gem.s2f32(primary_s2f31_msg, TIACK.OK)
+    passive.gem.s2f32(primary_s2f31_msg, secs.TIACK.OK)
 ```
 
 TimeFormat (A[12] or A[16]) can be set from `.clock_type` property
