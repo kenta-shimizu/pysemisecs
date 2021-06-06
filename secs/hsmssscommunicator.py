@@ -82,7 +82,7 @@ class HsmsSsConnection:
 
             with (
                 secs.CallbackQueuing(self._rpm_cb) as pmq,
-                secs.PutListQueuing() as llq):
+                secs.WaitingQueuing() as llq):
 
                 def _recv_bytes():
 

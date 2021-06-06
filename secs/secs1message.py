@@ -148,17 +148,21 @@ class Secs1Message(secs.SecsMessage):
 
         bs = b''.join([(x.to_bytes())[11:-2] for x in blocks])
 
-        v = Secs1Message(
-            blocks[0].strm,
-            blocks[0].func,
-            blocks[0].has_wbit(),
-            secs.Secs2BodyBuilder.from_body_bytes(bs) if len(bs) > 0 else None,
-            blocks[0].get_system_bytes(),
-            blocks[0].device_id,
-            blocks[0].rbit
-        )
-        v.__cache_blocks = blocks
-        return v
+        try:
+            v = Secs1Message(
+                blocks[0].strm,
+                blocks[0].func,
+                blocks[0].has_wbit(),
+                secs.Secs2BodyBuilder.from_body_bytes(bs) if bs else None,
+                blocks[0].get_system_bytes(),
+                blocks[0].device_id,
+                blocks[0].rbit
+            )
+            v.__cache_blocks = tuple(blocks)
+            return v
+
+        except secs.Secs2BodyParseError as e:
+            raise Secs1MessageParseError(e)
 
 
 class Secs1MessageBlock():
@@ -290,4 +294,18 @@ class Secs1MessageBlock():
             and block._bytes[9] == self._bytes[9]
             and block._bytes[10] == self._bytes[10]
             and block.get_block_number() == (self.get_block_number() + 1)
+        )
+
+    def is_same_block(self, block):
+        return (
+            block._bytes[1] == self._bytes[1]
+            and block._bytes[2] == self._bytes[2]
+            and block._bytes[3] == self._bytes[3]
+            and block._bytes[4] == self._bytes[4]
+            and block._bytes[5] == self._bytes[5]
+            and block._bytes[6] == self._bytes[6]
+            and block._bytes[7] == self._bytes[7]
+            and block._bytes[8] == self._bytes[8]
+            and block._bytes[9] == self._bytes[9]
+            and block._bytes[10] == self._bytes[10]
         )

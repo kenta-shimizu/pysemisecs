@@ -28,4 +28,6 @@ from secs.hsmsssactivecommunicator import HsmsSsActiveCommunicator
 
 from secs.secs1communicator import *
 
+from secs.secs1ontcpipcommunicator import Secs1OnTcpIpCommunicator, Secs1OnTcpIpReceiverCommunicator
+
 from secs.gem import *

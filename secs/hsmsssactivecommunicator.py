@@ -25,7 +25,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
         self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=8)
         self.__ipaddr = (ip_address, port)
 
-        self._waiting_cdt = threading.Condition()
+        self.__waiting_cdt = threading.Condition()
         self.__open_close_local_lock = threading.Lock()
 
     def get_protocol(self):
@@ -58,8 +58,8 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                             def _recv(msg):
 
                                 if msg is None:
-                                    with self._waiting_cdt:
-                                        self._waiting_cdt.notify_all()
+                                    with self.__waiting_cdt:
+                                        self.__waiting_cdt.notify_all()
                                     return
 
                                 ctrl_type = msg.get_control_type()
@@ -78,8 +78,8 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                                     elif ctrl_type == secs.HsmsSsControlType.SEPARATE_REQ:
 
-                                        with self._waiting_cdt:
-                                            self._waiting_cdt.notify_all()
+                                        with self.__waiting_cdt:
+                                            self.__waiting_cdt.notify_all()
 
                                     elif ctrl_type == secs.HsmsSsControlType.SELECT_REQ:
                                         self.send_reject_req(msg, secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S)
@@ -126,8 +126,8 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                                                     conn,
                                                     self._put_hsmsss_comm_state_to_selected)
 
-                                                with self._waiting_cdt:
-                                                    self._waiting_cdt.wait()
+                                                with self.__waiting_cdt:
+                                                    self.__waiting_cdt.wait()
 
                                 finally:
                                     self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
@@ -151,8 +151,8 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                     if self.is_closed:
                         return None
 
-                    with self._waiting_cdt:
-                        self._waiting_cdt.wait(self.timeout_t5)
+                    with self.__waiting_cdt:
+                        self.__waiting_cdt.wait(self.timeout_t5)
 
         self.__tpe.submit(_f)
 
@@ -163,7 +163,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 return
             self._set_closed()
 
-        with self._waiting_cdt:
-            self._waiting_cdt.notify_all()
+        with self.__waiting_cdt:
+            self.__waiting_cdt.notify_all()
 
         self.__tpe.shutdown(wait=True, cancel_futures=True)

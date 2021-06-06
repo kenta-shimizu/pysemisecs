@@ -20,6 +20,7 @@ if __name__ == '__main__':
         'hsmsssactivecommunicator.py',
         'hsmssspassivecommunicator.py',
         'secs1communicator.py',
+        'secs1ontcpipcommunicator.py',
         'gem.py'
     ]
 

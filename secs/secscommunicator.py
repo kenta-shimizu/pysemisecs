@@ -126,10 +126,28 @@ class CallbackQueuing(AbstractQueuing):
         threading.Thread(target=_f, daemon=True).start()
 
 
-class PutListQueuing(AbstractQueuing):
+class WaitingQueuing(AbstractQueuing):
 
     def __init__(self):
-        super(PutListQueuing, self).__init__()
+        super(WaitingQueuing, self).__init__()
+
+    def poll(self, timeout=None):
+
+        with self._open_close_lock:
+            if self._closed or not self._opened:
+                return None
+
+        with self._v_cdt:
+            v = self._poll_vv()
+            if v is not None:
+                return v
+            self._v_cdt.wait(timeout)
+
+        with self._open_close_lock:
+            if self._closed or not self._opened:
+                return None
+
+        return self._poll_vv()
 
     def put_to_list(self, values, pos, size, timeout=None):
 
@@ -164,30 +182,6 @@ class PutListQueuing(AbstractQueuing):
                 return -1
 
         return _f(values, pos, size)
-
-
-class WaitingQueuing(AbstractQueuing):
-
-    def __init__(self):
-        super(WaitingQueuing, self).__init__()
-
-    def poll(self, timeout=None):
-
-        with self._open_close_lock:
-            if self._closed or not self._opened:
-                return None
-
-        with self._v_cdt:
-            v = self._poll_vv()
-            if v is not None:
-                return v
-            self._v_cdt.wait(timeout)
-
-        with self._open_close_lock:
-            if self._closed or not self._opened:
-                return None
-
-        return self._poll_vv()
 
 
 class AbstractSecsCommunicator:

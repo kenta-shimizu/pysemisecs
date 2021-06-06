@@ -10,17 +10,18 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
         super(HsmsSsPassiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
-        self._tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
-        self._ipaddr = (ip_address, port)
+        
+        self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
+        self.__ipaddr = (ip_address, port)
 
-        self._waiting_cdts = list()
+        self.__waiting_cdts = list()
         self.__open_close_local_lock = threading.Lock()
 
     def get_protocol(self):
         return self._PROTOCOL_NAME
 
     def get_ipaddress(self):
-        return self._ipaddr
+        return self.__ipaddr
 
     def _open(self):
 
@@ -50,15 +51,15 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                                 def _ff():
                                     self._accept_socket(sock)
                                 
-                                self._tpe.submit(_ff)
+                                self.__tpe.submit(_ff)
 
                         except Exception as e:
                             if self.is_open:
                                 self._put_error(secs.HsmsSsCommunicatorError(e))
 
-                    self._tpe.submit(_f)
+                    self.__tpe.submit(_f)
                     
-                    self._waiting_cdts.append(cdt)
+                    self.__waiting_cdts.append(cdt)
                     with cdt:
                         cdt.wait()
 
@@ -66,7 +67,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 if self.is_open:
                     self._put_error(secs.HsmsSsCommunicatorError(e))
                     
-        self._tpe.submit(_open_server)
+        self.__tpe.submit(_open_server)
 
     def _accept_socket(self, sock):
 
@@ -203,14 +204,14 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                     with cdt:
                         cdt.notify_all()
 
-            self._tpe.submit(_f)
+            self.__tpe.submit(_f)
 
             try:
-                self._waiting_cdts.append(cdt)
+                self.__waiting_cdts.append(cdt)
                 with cdt:
                     cdt.wait()
             finally:
-                self._waiting_cdts.remove(cdt)
+                self.__waiting_cdts.remove(cdt)
 
                 try:
                     sock.shutdown(socket.SHUT_RDWR)
@@ -228,8 +229,8 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 return
             self._set_closed()
 
-        for cdt in self._waiting_cdts:
+        for cdt in self.__waiting_cdts:
             with cdt:
                 cdt.notify_all()
 
-        self._tpe.shutdown(wait=True, cancel_futures=True)
+        self.__tpe.shutdown(wait=True, cancel_futures=True)
