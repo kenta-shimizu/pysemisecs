@@ -24,7 +24,7 @@ class AbstractSecs1OnTcpIpCommunicator(secs.AbstractSecs1Communicator):
 
     def _send_bytes(self, bs):
 
-        with self.__sockets:
+        with self.__lock_sockets:
             if self.__sockets:
                 try:
                     for sock in self.__sockets:
@@ -37,11 +37,18 @@ class AbstractSecs1OnTcpIpCommunicator(secs.AbstractSecs1Communicator):
                 raise secs.Secs1CommunicatorError("Not connected")
 
     def _reading(self, sock):
+        try:
+            while self.is_open:
+                bs = sock.recv(4096)
+                if bs:
 
-        #TODO
-        #reading
+                    pass
 
-        pass
+                else:
+                    return
+
+        except Exception as e:
+            self._put_error(e)
 
 
 class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
@@ -95,10 +102,24 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
                             try:
                                 self._add_socket(sock)
                                 sock.connect(self._ipaddr)
-                                self._reading(sock)
+
+                                def _f():
+                                    self._reading(sock)
+                                    with cdt:
+                                        cdt.notify_all()
+
+                                self.__tpe.submit(_f)
+
+                                with cdt:
+                                    cdt.wait()
 
                             finally:
                                 self._remove_socket(sock)
+
+                                try:
+                                    sock.shutdown(socket.SHUT_RDWR)
+                                except Exception:
+                                    pass
 
                     except Exception as e:
                         if self.is_open:

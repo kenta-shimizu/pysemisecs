@@ -1,10 +1,11 @@
-import re
-import socket
 import datetime
-import concurrent.futures
-import threading
-import os
+import re
 import struct
+import threading
+import concurrent
+import concurrent.futures
+import os
+import socket
 
 
 class Secs2BodyParseError(Exception):
@@ -1280,17 +1281,21 @@ class Secs1Message(SecsMessage):
 
         bs = b''.join([(x.to_bytes())[11:-2] for x in blocks])
 
-        v = Secs1Message(
-            blocks[0].strm,
-            blocks[0].func,
-            blocks[0].has_wbit(),
-            Secs2BodyBuilder.from_body_bytes(bs) if len(bs) > 0 else None,
-            blocks[0].get_system_bytes(),
-            blocks[0].device_id,
-            blocks[0].rbit
-        )
-        v.__cache_blocks = blocks
-        return v
+        try:
+            v = Secs1Message(
+                blocks[0].strm,
+                blocks[0].func,
+                blocks[0].has_wbit(),
+                Secs2BodyBuilder.from_body_bytes(bs) if bs else None,
+                blocks[0].get_system_bytes(),
+                blocks[0].device_id,
+                blocks[0].rbit
+            )
+            v.__cache_blocks = tuple(blocks)
+            return v
+
+        except Secs2BodyParseError as e:
+            raise Secs1MessageParseError(e)
 
 
 class Secs1MessageBlock():
@@ -1424,6 +1429,20 @@ class Secs1MessageBlock():
             and block.get_block_number() == (self.get_block_number() + 1)
         )
 
+    def is_same_block(self, block):
+        return (
+            block._bytes[1] == self._bytes[1]
+            and block._bytes[2] == self._bytes[2]
+            and block._bytes[3] == self._bytes[3]
+            and block._bytes[4] == self._bytes[4]
+            and block._bytes[5] == self._bytes[5]
+            and block._bytes[6] == self._bytes[6]
+            and block._bytes[7] == self._bytes[7]
+            and block._bytes[8] == self._bytes[8]
+            and block._bytes[9] == self._bytes[9]
+            and block._bytes[10] == self._bytes[10]
+        )
+
 
 class SecsCommunicatorError(Exception):
 
@@ -1549,10 +1568,28 @@ class CallbackQueuing(AbstractQueuing):
         threading.Thread(target=_f, daemon=True).start()
 
 
-class PutListQueuing(AbstractQueuing):
+class WaitingQueuing(AbstractQueuing):
 
     def __init__(self):
-        super(PutListQueuing, self).__init__()
+        super(WaitingQueuing, self).__init__()
+
+    def poll(self, timeout=None):
+
+        with self._open_close_lock:
+            if self._closed or not self._opened:
+                return None
+
+        with self._v_cdt:
+            v = self._poll_vv()
+            if v is not None:
+                return v
+            self._v_cdt.wait(timeout)
+
+        with self._open_close_lock:
+            if self._closed or not self._opened:
+                return None
+
+        return self._poll_vv()
 
     def put_to_list(self, values, pos, size, timeout=None):
 
@@ -1587,30 +1624,6 @@ class PutListQueuing(AbstractQueuing):
                 return -1
 
         return _f(values, pos, size)
-
-
-class WaitingQueuing(AbstractQueuing):
-
-    def __init__(self):
-        super(WaitingQueuing, self).__init__()
-
-    def poll(self, timeout=None):
-
-        with self._open_close_lock:
-            if self._closed or not self._opened:
-                return None
-
-        with self._v_cdt:
-            v = self._poll_vv()
-            if v is not None:
-                return v
-            self._v_cdt.wait(timeout)
-
-        with self._open_close_lock:
-            if self._closed or not self._opened:
-                return None
-
-        return self._poll_vv()
 
 
 class AbstractSecsCommunicator:
@@ -2358,9 +2371,8 @@ class HsmsSsConnection:
 
         def _f():
 
-            with (
-                CallbackQueuing(self._rpm_cb) as pmq,
-                PutListQueuing() as llq):
+            with CallbackQueuing(self._rpm_cb) as pmq, \
+                WaitingQueuing() as llq:
 
                 def _recv_bytes():
 
@@ -2673,7 +2685,7 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
         self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=8)
         self.__ipaddr = (ip_address, port)
 
-        self._waiting_cdt = threading.Condition()
+        self.__waiting_cdt = threading.Condition()
         self.__open_close_local_lock = threading.Lock()
 
     def get_protocol(self):
@@ -2706,8 +2718,8 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
                             def _recv(msg):
 
                                 if msg is None:
-                                    with self._waiting_cdt:
-                                        self._waiting_cdt.notify_all()
+                                    with self.__waiting_cdt:
+                                        self.__waiting_cdt.notify_all()
                                     return
 
                                 ctrl_type = msg.get_control_type()
@@ -2726,8 +2738,8 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
 
                                     elif ctrl_type == HsmsSsControlType.SEPARATE_REQ:
 
-                                        with self._waiting_cdt:
-                                            self._waiting_cdt.notify_all()
+                                        with self.__waiting_cdt:
+                                            self.__waiting_cdt.notify_all()
 
                                     elif ctrl_type == HsmsSsControlType.SELECT_REQ:
                                         self.send_reject_req(msg, HsmsSsRejectReason.NOT_SUPPORT_TYPE_S)
@@ -2774,8 +2786,8 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
                                                     conn,
                                                     self._put_hsmsss_comm_state_to_selected)
 
-                                                with self._waiting_cdt:
-                                                    self._waiting_cdt.wait()
+                                                with self.__waiting_cdt:
+                                                    self.__waiting_cdt.wait()
 
                                 finally:
                                     self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
@@ -2799,8 +2811,8 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
                     if self.is_closed:
                         return None
 
-                    with self._waiting_cdt:
-                        self._waiting_cdt.wait(self.timeout_t5)
+                    with self.__waiting_cdt:
+                        self.__waiting_cdt.wait(self.timeout_t5)
 
         self.__tpe.submit(_f)
 
@@ -2811,8 +2823,8 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
                 return
             self._set_closed()
 
-        with self._waiting_cdt:
-            self._waiting_cdt.notify_all()
+        with self.__waiting_cdt:
+            self.__waiting_cdt.notify_all()
 
         self.__tpe.shutdown(wait=True, cancel_futures=True)
 
@@ -2823,17 +2835,18 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
 
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
         super(HsmsSsPassiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
-        self._tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
-        self._ipaddr = (ip_address, port)
 
-        self._waiting_cdts = list()
+        self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
+        self.__ipaddr = (ip_address, port)
+
+        self.__waiting_cdts = list()
         self.__open_close_local_lock = threading.Lock()
 
     def get_protocol(self):
         return self._PROTOCOL_NAME
 
     def get_ipaddress(self):
-        return self._ipaddr
+        return self.__ipaddr
 
     def _open(self):
 
@@ -2863,15 +2876,15 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                                 def _ff():
                                     self._accept_socket(sock)
 
-                                self._tpe.submit(_ff)
+                                self.__tpe.submit(_ff)
 
                         except Exception as e:
                             if self.is_open:
                                 self._put_error(HsmsSsCommunicatorError(e))
 
-                    self._tpe.submit(_f)
+                    self.__tpe.submit(_f)
 
-                    self._waiting_cdts.append(cdt)
+                    self.__waiting_cdts.append(cdt)
                     with cdt:
                         cdt.wait()
 
@@ -2879,14 +2892,13 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                 if self.is_open:
                     self._put_error(HsmsSsCommunicatorError(e))
 
-        self._tpe.submit(_open_server)
+        self.__tpe.submit(_open_server)
 
     def _accept_socket(self, sock):
 
-        with (
-            CallbackQueuing(self._put_recv_primary_msg) as pq,
-            WaitingQueuing() as wq,
-            HsmsSsConnection(sock, self, wq.put) as conn):
+        with CallbackQueuing(self._put_recv_primary_msg) as pq, \
+            WaitingQueuing() as wq, \
+            HsmsSsConnection(sock, self, wq.put) as conn:
 
             cdt = threading.Condition()
 
@@ -3016,14 +3028,14 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                     with cdt:
                         cdt.notify_all()
 
-            self._tpe.submit(_f)
+            self.__tpe.submit(_f)
 
             try:
-                self._waiting_cdts.append(cdt)
+                self.__waiting_cdts.append(cdt)
                 with cdt:
                     cdt.wait()
             finally:
-                self._waiting_cdts.remove(cdt)
+                self.__waiting_cdts.remove(cdt)
 
                 try:
                     sock.shutdown(socket.SHUT_RDWR)
@@ -3041,32 +3053,457 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                 return
             self._set_closed()
 
-        for cdt in self._waiting_cdts:
+        for cdt in self.__waiting_cdts:
             with cdt:
                 cdt.notify_all()
 
-        self._tpe.shutdown(wait=True, cancel_futures=True)
+        self.__tpe.shutdown(wait=True, cancel_futures=True)
+
+
+class Secs1CommunicatorError(SecsCommunicatorError):
+
+    def __init__(self, msg):
+        super(Secs1CommunicatorError, self).__init__(msg)
+
+
+class Secs1SendMessageError(SecsSendMessageError):
+
+    def __init__(self, msg, ref_msg):
+        super(Secs1SendMessageError, self).__init__(msg, ref_msg)
+
+
+class Secs1RetryOverError(Secs1SendMessageError):
+
+    def __init__(self, msg, ref_msg):
+        super(Secs1RetryOverError, self).__init__(msg, ref_msg)
+
+
+class Secs1WaitReplyMessageError(SecsWaitReplyMessageError):
+
+    def __init__(self, msg, ref_msg):
+        super(Secs1WaitReplyMessageError, self).__init__(msg, ref_msg)
+
+
+class Secs1TimeoutT3Error(Secs1WaitReplyMessageError):
+
+    def __init__(self, msg, ref_msg):
+        super(Secs1TimeoutT3Error, self).__init__(msg, ref_msg)
+
+
+class MsgAndRecvBytesWaitingQueuing(WaitingQueuing):
+
+    def __init__(self):
+        super(MsgAndRecvBytesWaitingQueuing, self).__init__()
+        self.__msg_queue = list()
+
+    def put_recv_bytes(self, bs):
+        self.puts(bs)
+
+    def entry_msg(self, msg):
+        if msg:
+            with self._v_lock:
+                self.__msg_queue.append(msg)
+                with self._v_cdt:
+                    self._v_cdt.notify_all()
+
+    def pop_msg(self):
+        with self._v_lock:
+            if self.__msg_queue:
+                return self.__msg_queue.pop(0)
+            else:
+                return None
+
+    def poll_either(self, timeout=None):
+
+        with self._open_close_lock:
+            if self._closed or not self._opened:
+                return (None, None)
+
+        with self._v_lock:
+            if self.__msg_queue:
+                return (self.__msg_queue[0], None)
+
+        with self._v_cdt:
+            v = self._poll_vv()
+            if v is not None:
+                return (None, v)
+
+            self._v_cdt.wait(timeout)
+
+        with self._open_close_lock:
+            if self._closed or not self._opened:
+                return (None, None)
+
+        with self._v_lock:
+            if self.__msg_queue:
+                return (self.__msg_queue[0], None)
+
+        return (None, self._poll_vv())
+
+
+class SendSecs1MessagePack:
+
+    def __init__(self, msg):
+        self.__msg = msg
+        self.__present = 0
+
+    def secs1msg(self):
+        return self.__msg
+
+    def present_block(self):
+        return (self.__msg.to_blocks())[self.__present]
+
+    def next_block(self):
+        self.__present += 1
+
+
+class Secs1CircuitResult:
+
+    SENDED = 0x1
+    ERROR = 0x2
+    RESET_TIMEOUT_T3 = 0x4
+    RECEIVED = 0x8
+
+
+class Secs1Circuit:
+
+    __ENQ = 0x5
+    __EOT = 0x4
+    __ACK = 0x6
+    __NAK = 0x15
+    __BYTES_ENQ = bytes([__ENQ])
+    __BYTES_EOT = bytes([__EOT])
+    __BYTES_ACK = bytes([__ACK])
+    __BYTES_NAK = bytes([__NAK])
+
+    def __init__(self, parent):
+        self.__parent = parent
+        self.__msg_and_bytes_queue = MsgAndRecvBytesWaitingQueuing()
+        self.__recv_blocks = list()
+        self._open_close_rlock = threading.RLock()
+        self._opened = False
+        self._closed = False
+
+    def __enter__(self):
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+    def open(self):
+
+        with self._open_close_rlock:
+            if self._closed:
+                raise RuntimeError("Already closed")
+            if self._opened:
+                raise RuntimeError("Already opened")
+            self._opened = True
+
+        threading.Thread(target=self.__circuit).start()
+
+    def close(self):
+
+        with self._open_close_rlock:
+            if self._closed:
+                return
+            self._closed = True
+
+        self.__msg_and_bytes_queue.close()
+
+    def put_recv_bytes(self, bs):
+        self.__msg_and_bytes_queue.put_recv_bytes(bs)
+
+    def entry_msg(self, msg):
+        self.__msg_and_bytes_queue.entry_msg(msg)
+
+    def __send_bytes(self, bs):
+        self.__parent._send_bytes(bs)
+
+    def __circuit(self):
+
+        while True:
+
+            msg, b = self.__msg_and_bytes_queue.poll_either()
+
+            if msg is not None:
+
+                try:
+                    pack = SendSecs1MessagePack(msg)
+
+                    count = 0
+                    while True:
+
+                        self.__send_bytes(self.__BYTES_ENQ)
+
+                        b = self.__msg_and_bytes_queue.poll(self.__parent.timeout_t2)
+
+                        if b == self.__ENQ:
+
+                            if self.__parent.is_master:
+
+                                b = self.__msg_and_bytes_queue.poll(self.__parent.timeout_t2)
+
+                                if b == self.__EOT:
+
+                                    if self.__sending(pack):
+
+                                        if pack.present_block().ebit:
+
+                                            #TODO
+                                            #success sended msg
+
+                                            break
+
+                                        else:
+
+                                            pack.next_block()
+                                            count = 0
+                                            continue
+
+                                    else:
+                                        count += 1
+
+                                else:
+                                    count += 1
+
+                            else:
+
+                                self.__receiving()
+                                break
+
+                        elif b == self.__EOT:
+
+                            if self.__sending(pack):
+
+                                if pack.present_block().ebit:
+
+                                    #TODO
+                                    #success sended msg
+
+                                    break
+
+                                else:
+
+                                    pack.next_block()
+                                    count = 0
+                                    continue
+
+                            else:
+                                count += 1
+
+                        else:
+                            count += 1
+
+                        if count > self.__parent.retry:
+                            raise Secs1RetryOverError("", msg)
+
+                except Secs1CommunicatorError as e:
+
+                    self.__msg_and_bytes_queue.pop_msg()
+
+                    #TODO
+                    pass
+
+                except Secs1SendMessageError as e:
+
+                    self.__msg_and_bytes_queue.pop_msg()
+
+                    #TODO
+                    pass
+
+            elif b is not None:
+
+                if b == self.__ENQ:
+                    self.__receiving()
+
+            else:
+                return
+
+    def __receiving(self):
+
+        try:
+            self.__send_bytes(self.__BYTES_EOT)
+
+            bb = list()
+
+            r = self.__msg_and_bytes_queue.put_to_list(
+                bb, 0, 1,
+                self.__parent.timeout_t2)
+
+            if r <= 0:
+                self.__send_bytes(self.__BYTES_NAK)
+
+                #TODO
+                #t1-timeout
+
+                return
+
+            bb_size = bb[0]
+            if bb_size < 10 or bb_size > 254:
+                self.__recv_garbage()
+                self.__send_bytes(self.__BYTES_NAK)
+
+                #TODO
+                #t1-timeout
+
+                return
+
+            i = 1
+            m = bb_size + 3
+
+            while i < m:
+                r = self.__msg_and_bytes_queue.put_to_list(
+                    bb, i, m,
+                    self.__parent.timeout_t1)
+
+                if r < 0:
+                    self.__send_bytes(self.__BYTES_NAK)
+
+                    #TODO
+                    #t1-timeout
+
+                    return
+
+                i += r
+
+            if self.__sum_check(bb):
+
+                self.__send_bytes(self.__BYTES_ACK)
+
+                block = Secs1MessageBlock(bytes(bb))
+
+                if self.__recv_blocks:
+
+                    if self.__recv_blocks[-1].is_next_block(block):
+
+                        self.__receiving_append(block)
+
+                    else:
+
+                        if self.__recv_blocks[-1].is_sama_block(block):
+
+                            b = self.__msg_and_bytes_queue.poll(self.__parent.timeout_t4)
+
+                            if b == self.__ENQ:
+                                self.__receiving()
+
+                        else:
+
+                            del self.__recv_blocks[:]
+                            self.__receiving_append(block)
+
+                else:
+
+                    self.__receiving_append(block)
+
+            else:
+
+                self.__recv_garbage()
+                self.__send_bytes(self.__BYTES_NAK)
+
+                #TODO
+                #t1-timeout
+
+        except Exception as e:
+
+            #TODO
+            #put-error
+
+            self.__parent._put_error(e)
+
+            pass
+
+    def __sum_check(self, block):
+        a = sum(block[1:-2]) & 0xFFFF
+        b = (block[-2] << 8) | block[-1]
+        return a == b
+
+    def __recv_garbage(self):
+        while True:
+            v = self.__msg_and_bytes_queue.poll(self.__parent.timeout_t1)
+            if v is None:
+                return
+
+    def __receiving_append(self, block):
+
+        self.__recv_blocks.append(block)
+
+        if block.ebit:
+
+            try:
+                msg = Secs1Message.from_blocks(self.__recv_blocks)
+
+                #TODO
+                #recv-msg
+
+            except Secs1MessageParseError as e:
+
+                #TODO
+                pass
+
+            finally:
+                del self.__recv_blocks[:]
+
+        else:
+
+            #TODO
+            #reset-T3-timer
+
+            b = self.__msg_and_bytes_queue.poll(self.__parent.timeout_t4)
+
+            if b == self.__ENQ:
+                self.__receiving()
+
+    def __sending(self, msg_pack):
+        self.__send_bytes(msg_pack.present_block().to_bytes())
+        b = self.__msg_and_bytes_queue.poll(self.__parent.timeout_t2)
+        return b == self.__ACK
 
 
 class AbstractSecs1Communicator(AbstractSecsCommunicator):
 
-    _DEFAULT_RETRY = 3
+    __DEFAULT_RETRY = 3
 
     def __init__(self, session_id, is_equip, is_master, **kwargs):
         super(AbstractSecs1Communicator, self).__init__(session_id, is_equip, **kwargs)
-        self.set_master_mode(is_master)
-        self.set_retry(kwargs.get('retry', self._DEFAULT_RETRY))
+        self.is_master = is_master
+        self.retry = kwargs.get('retry', self.__DEFAULT_RETRY)
 
-    def set_master_mode(self, is_master):
-        self._is_master = bool(is_master)
+        self._recv_all_msg_putter = CallbackQueuing(self._put_recv_all_msg)
+        self._sended_msg_putter = CallbackQueuing(self._put_sended_msg)
 
-    def set_retry(self, v):
-        if v is None:
+
+    @property
+    def is_master(self):
+        pass
+
+    @is_master.getter
+    def is_master(self):
+        return self.__is_master
+
+    @is_master.setter
+    def is_master(self, val):
+        self.__is_master = bool(val)
+
+    @property
+    def retry(self):
+        pass
+
+    @retry.getter
+    def retry(self):
+        return self.__retry
+
+    @retry.setter
+    def retry(self, val):
+        if val is None:
             raise TypeError("retry-value require not None")
-        if v >= 0:
-            self._retry = v
         else:
-            raise ValueError("retry-value require >= 0")
+            v = int(val)
+            if v >= 0:
+                self.__retry = v
+            else:
+                raise ValueError("retry-value require >= 0")
 
     def _open(self):
         pass
@@ -3079,14 +3516,23 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         return self.send_secs1_msg(
-            Secs1Message(strm, func, wbit, secs2body, system_bytes, device_id, self._is_equip))
+            Secs1Message(strm, func, wbit, secs2body, system_bytes, device_id, self.is_equip))
+
+    def _send_bytes(self, bs):
+        # prototype
+        return 0
+
+
 
     def send_secs1_msg(self, msg):
 
-        timeout_tx = self._timeout_t3 if msg.has_wbit() else -1.0
+        timeout_tx = self.timeout_t3 if msg.wbit else -1.0
 
         #TODO
         #send
+
+        def _send_block(bs):
+            pass
 
         if timeout_tx > 0.0:
 
@@ -3096,6 +3542,193 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
 
         else:
             return None
+
+
+class AbstractSecs1OnTcpIpCommunicator(AbstractSecs1Communicator):
+
+    def __init__(self, session_id, is_equip, is_master, **kwargs):
+        super(AbstractSecs1OnTcpIpCommunicator, self).__init__(session_id, is_equip, is_master, **kwargs)
+
+        self.__sockets = list()
+        self.__lock_sockets = threading.Lock()
+
+    def _add_socket(self, sock):
+        with self.__lock_sockets:
+            self.__sockets.append(sock)
+            self._put_communicated(bool(self.__sockets))
+
+    def _remove_socket(self, sock):
+        with self.__lock_sockets:
+            self.__sockets.remove(sock)
+            self._put_communicated(bool(self.__sockets))
+
+    def _send_bytes(self, bs):
+
+        with self.__lock_sockets:
+            if self.__sockets:
+                try:
+                    for sock in self.__sockets:
+                        sock.sendall(bs)
+
+                except Exception as e:
+                    raise Secs1CommunicatorError(e)
+
+            else:
+                raise Secs1CommunicatorError("Not connected")
+
+    def _reading(self, sock):
+        try:
+            while self.is_open:
+                bs = sock.recv(4096)
+                if bs:
+
+                    pass
+
+                else:
+                    return
+
+        except Exception as e:
+            self._put_error(e)
+
+
+class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
+
+    __DEFAULT_RECONNECT = 5.0
+
+    def __init__(self, ip_address, port, session_id, is_equip, is_master, **kwargs):
+        super(Secs1OnTcpIpCommunicator, self).__init__(session_id, is_equip, is_master, **kwargs)
+
+        self._tpe = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+        self._ipaddr = (ip_address, port)
+
+        self.__waiting_cdts = list()
+        self.__open_close_local_lock = threading.Lock()
+
+        self.reconnect = kwargs.get('reconnect', self.__DEFAULT_RECONNECT)
+
+    @property
+    def reconnect(self):
+        pass
+
+    @reconnect.getter
+    def reconnect(self):
+        return self.__reconnect
+
+    @reconnect.setter
+    def reconnect(self, val):
+        self.__reconnect = float(val)
+
+    def _open(self):
+
+        with self.__open_close_local_lock:
+            if self.is_closed:
+                raise RuntimeError("Already closed")
+            if self.is_open:
+                raise RuntimeError("Already opened")
+            self._set_opened()
+
+        def _connecting():
+
+            cdt = threading.Condition()
+
+            try:
+                self.__waiting_cdts.append(cdt)
+
+                while self.is_open:
+
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+
+                            try:
+                                self._add_socket(sock)
+                                sock.connect(self._ipaddr)
+
+                                def _f():
+                                    self._reading(sock)
+                                    with cdt:
+                                        cdt.notify_all()
+
+                                self.__tpe.submit(_f)
+
+                                with cdt:
+                                    cdt.wait()
+
+                            finally:
+                                self._remove_socket(sock)
+
+                                try:
+                                    sock.shutdown(socket.SHUT_RDWR)
+                                except Exception:
+                                    pass
+
+                    except Exception as e:
+                        if self.is_open:
+                            self._put_error(e)
+
+                    if self.is_closed:
+                        return None
+
+                    with cdt:
+                        cdt.wait(self.reconnect)
+
+            finally:
+                self.__waiting_cdts.remove(cdt)
+
+        self.__tpe.submit(_connecting)
+
+    def _close(self):
+        with self.__open_close_local_lock:
+            if self.is_closed:
+                return
+            self._set_closed()
+
+        for cdt in self.__waiting_cdts:
+            with cdt:
+                cdt.notify_all()
+
+        self.__tpe.shutdown(wait=True, cancel_futures=True)
+
+
+class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
+
+    def __init__(self, ip_address, port, session_id, is_equip, is_master, **kwargs):
+        super(Secs1OnTcpIpReceiverCommunicator, self).__init__(session_id, is_equip, is_master, **kwargs)
+
+        self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
+        self.__ipaddr = (ip_address, port)
+
+        self.__waiting_cdts = list()
+        self.__open_close_local_lock = threading.Lock()
+
+    def _open(self):
+
+        with self.__open_close_local_lock:
+            if self.is_closed:
+                raise RuntimeError("Already closed")
+            if self.is_open:
+                raise RuntimeError("Already opened")
+            self._set_opened()
+
+        def _open_server():
+
+            #TODO
+
+            pass
+
+        self.__tpe.submit(_open_server)
+
+    def _close(self):
+        with self.__open_close_local_lock:
+            if self.is_closed:
+                return
+            self._set_closed()
+
+        for cdt in self.__waiting_cdts:
+            with cdt:
+                cdt.notify_all()
+
+        self.__tpe.shutdown(wait=True, cancel_futures=True)
+
 
 
 class ClockType:

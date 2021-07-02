@@ -80,9 +80,8 @@ class HsmsSsConnection:
 
         def _f():
 
-            with (
-                secs.CallbackQueuing(self._rpm_cb) as pmq,
-                secs.WaitingQueuing() as llq):
+            with secs.CallbackQueuing(self._rpm_cb) as pmq, \
+                secs.WaitingQueuing() as llq:
 
                 def _recv_bytes():
 
