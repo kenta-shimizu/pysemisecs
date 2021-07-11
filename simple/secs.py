@@ -1,11 +1,11 @@
-import datetime
-import re
-import struct
-import threading
-import concurrent
-import concurrent.futures
-import os
 import socket
+import concurrent.futures
+import concurrent
+import os
+import threading
+import datetime
+import struct
+import re
 
 
 class Secs2BodyParseError(Exception):
@@ -3787,7 +3787,8 @@ class Clock:
                         int(v.value[6:8]),
                         int(v.value[8:10]),
                         int(v.value[10:12]),
-                        (int(v.value[12:14]) * 10000)
+                        int(v.value[12:14]),
+                        (int(v.value[14:16]) * 10000)
                     ))
 
         raise Secs2BodyParseError("Unknown ClockType")

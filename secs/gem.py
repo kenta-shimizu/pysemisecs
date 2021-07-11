@@ -58,7 +58,8 @@ class Clock:
                         int(v.value[6:8]),
                         int(v.value[8:10]),
                         int(v.value[10:12]),
-                        (int(v.value[12:14]) * 10000)
+                        int(v.value[12:14]),
+                        (int(v.value[14:16]) * 10000)
                     ))
 
         raise secs.Secs2BodyParseError("Unknown ClockType")

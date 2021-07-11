@@ -213,9 +213,9 @@ Access from `.gem` property.
 - Reply S2F18 Now examples
 
 ```python
-    tiack = active.gem.s2f18Now(primary_s2f17_msg)
-    tiack = active.gem.s2f18(primary_s2f17_msg, secs.Clock.now())
-    tiack = active.gem.s2f18(primary_s2f17_msg, secs.Clock(datetime.datetime.now()))
+    active.gem.s2f18Now(primary_s2f17_msg)
+    active.gem.s2f18(primary_s2f17_msg, secs.Clock.now())
+    active.gem.s2f18(primary_s2f17_msg, secs.Clock(datetime.datetime.now()))
 ```
 
 - Send S2F31 Now examples
