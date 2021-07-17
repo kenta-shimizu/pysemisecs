@@ -23,15 +23,15 @@ class SecsWithReferenceMessageError(SecsCommunicatorError):
 
     def __str__(self):
         return (self.__class__.__name__ + '('
-        + repr(self._msg) + ','
-        + self._ref_msg._header10bytes_str()
-        + ')')
+                + repr(self._msg) + ','
+                + self._ref_msg._header10bytes_str()
+                + ')')
 
     def __repr__(self):
         return (self.__class__.__name__ + '('
-        + repr(self._msg) + ','
-        + repr(self._ref_msg._header10bytes())
-        + ')')
+                + repr(self._msg) + ','
+                + repr(self._ref_msg._header10bytes())
+                + ')')
 
 
 class SecsSendMessageError(SecsWithReferenceMessageError):
@@ -172,9 +172,9 @@ class WaitingQueuing(AbstractQueuing):
                 return -1
                 
         with self._v_cdt:
-            r = _f(values, pos, size)
-            if r > 0:
-                return r
+            rr = _f(values, pos, size)
+            if rr > 0:
+                return rr
             self._v_cdt.wait(timeout)
 
         with self._open_close_lock:
@@ -186,14 +186,14 @@ class WaitingQueuing(AbstractQueuing):
 
 class AbstractSecsCommunicator:
 
-    __DEFAULT_TIMEOUT_T1 =  1.0
+    __DEFAULT_TIMEOUT_T1 = 1.0
     __DEFAULT_TIMEOUT_T2 = 15.0
     __DEFAULT_TIMEOUT_T3 = 45.0
     __DEFAULT_TIMEOUT_T4 = 45.0
     __DEFAULT_TIMEOUT_T5 = 10.0
-    __DEFAULT_TIMEOUT_T6 =  5.0
+    __DEFAULT_TIMEOUT_T6 = 5.0
     __DEFAULT_TIMEOUT_T7 = 10.0
-    __DEFAULT_TIMEOUT_T8 =  6.0
+    __DEFAULT_TIMEOUT_T8 = 6.0
 
     def __init__(self, device_id, is_equip, **kwargs):
 
@@ -370,7 +370,7 @@ class AbstractSecsCommunicator:
         """Timeout-T1 setter.
 
         Args:
-            v (int or float): Timeout-T1 value.
+            val (int or float): Timeout-T1 value.
 
         Raises:
             TypeError: if value is None.
@@ -396,7 +396,7 @@ class AbstractSecsCommunicator:
         """Timeout-T2 setter.
 
         Args:
-            v (int or float): Timeout-T2 value.
+            val (int or float): Timeout-T2 value.
 
         Raises:
             TypeError: if value is None.
@@ -422,7 +422,7 @@ class AbstractSecsCommunicator:
         """Timeout-T3 setter.
 
         Args:
-            v (int or float): Timeout-T3 value.
+            val (int or float): Timeout-T3 value.
 
         Raises:
             TypeError: if value is None.
@@ -448,7 +448,7 @@ class AbstractSecsCommunicator:
         """Timeout-T4 setter.
 
         Args:
-            v (int or float): Timeout-T4 value.
+            val (int or float): Timeout-T4 value.
 
         Raises:
             TypeError: if value is None.
@@ -474,7 +474,7 @@ class AbstractSecsCommunicator:
         """Timeout-T5 setter.
 
         Args:
-            v (int or float): Timeout-T5 value.
+            val (int or float): Timeout-T5 value.
 
         Raises:
             TypeError: if value is None.
@@ -500,7 +500,7 @@ class AbstractSecsCommunicator:
         """Timeout-T6 setter.
 
         Args:
-            v (int or float): Timeout-T6 value.
+            val (int or float): Timeout-T6 value.
 
         Raises:
             TypeError: if value is None.
@@ -526,7 +526,7 @@ class AbstractSecsCommunicator:
         """Timeout-T7 setter.
 
         Args:
-            v (int or float): Timeout-T7 value.
+            val (int or float): Timeout-T7 value.
 
         Raises:
             TypeError: if value is None.
@@ -552,7 +552,7 @@ class AbstractSecsCommunicator:
         """Timeout-T8 setter.
 
         Args:
-            v (int or float): Timeout-T8 value.
+            val (int or float): Timeout-T8 value.
 
         Raises:
             TypeError: if value is None.
@@ -695,7 +695,7 @@ class AbstractSecsCommunicator:
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool: W-Bit.
-            Secs2Body (Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
+            secs2body (Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
 
         Raises:
             SecsCommunicatorError: if communicator not opened.
@@ -759,7 +759,6 @@ class AbstractSecsCommunicator:
                 return secs.Secs2BodyBuilder.build(v[0], v[1])
             else:
                 raise TypeError('Secs2Body is tuple or list, and length == 2')
-        
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         """prototype-pattern send
@@ -782,54 +781,54 @@ class AbstractSecsCommunicator:
         """
         raise NotImplementedError()
 
-    def add_recv_primary_msg_listener(self, l):
-        self.__recv_primary_msg_lstnrs.append(l)
+    def add_recv_primary_msg_listener(self, listener):
+        self.__recv_primary_msg_lstnrs.append(listener)
 
-    def remove_recv_priary_msg_listener(self, l):
-        self.__recv_primary_msg_lstnrs.remove(l)
+    def remove_recv_priary_msg_listener(self, listener):
+        self.__recv_primary_msg_lstnrs.remove(listener)
 
     def _put_recv_primary_msg(self, recv_msg):
         if recv_msg is not None:
-            for lstnr in self.__recv_primary_msg_lstnrs:
-                lstnr(recv_msg, self)
+            for ls in self.__recv_primary_msg_lstnrs:
+                ls(recv_msg, self)
 
-    def add_recv_all_msg_listener(self, l):
-        self.__recv_all_msg_lstnrs.append(l)
+    def add_recv_all_msg_listener(self, listener):
+        self.__recv_all_msg_lstnrs.append(listener)
 
-    def remove_recv_all_msg_listener(self, l):
-        self.__recv_all_msg_lstnrs.remove(l)
+    def remove_recv_all_msg_listener(self, listener):
+        self.__recv_all_msg_lstnrs.remove(listener)
     
     def _put_recv_all_msg(self, recv_msg):
         if recv_msg is not None:
-            for lstnr in self.__recv_all_msg_lstnrs:
-                lstnr(recv_msg, self)
+            for ls in self.__recv_all_msg_lstnrs:
+                ls(recv_msg, self)
     
-    def add_sended_msg_listener(self, l):
-        self.__sended_msg_lstnrs.append(l)
+    def add_sended_msg_listener(self, listener):
+        self.__sended_msg_lstnrs.append(listener)
 
-    def remove_sended_msg_listener(self, l):
-        self.__sended_msg_lstnrs.remove(l)
+    def remove_sended_msg_listener(self, listener):
+        self.__sended_msg_lstnrs.remove(listener)
 
     def _put_sended_msg(self, sended_msg):
         if sended_msg is not None:
-            for lstnr in self.__sended_msg_lstnrs:
-                lstnr(sended_msg, self)
+            for ls in self.__sended_msg_lstnrs:
+                ls(sended_msg, self)
     
-    def add_communicate_listener(self, l):
+    def add_communicate_listener(self, listener):
         with self.__comm_rlock:
-            self.__communicate_lstnrs.append(l)
-            l(self.__communicating, self)
+            self.__communicate_lstnrs.append(listener)
+            listener(self.__communicating, self)
 
-    def remove_communicate_listener(self, l):
+    def remove_communicate_listener(self, listener):
         with self.__comm_rlock:
-            self.__communicate_lstnrs.remove(l)
+            self.__communicate_lstnrs.remove(listener)
 
     def _put_communicated(self, communicating):
         with self.__comm_rlock:
             if communicating != self.__communicating:
                 self.__communicating = communicating
-                for lstnr in self.__communicate_lstnrs:
-                    lstnr(self.__communicating, self)
+                for ls in self.__communicate_lstnrs:
+                    ls(self.__communicating, self)
                 with self.__comm_condition:
                     self.__comm_condition.notify_all()
 
@@ -842,12 +841,12 @@ class AbstractSecsCommunicator:
         with self.__comm_rlock:
             return self.__communicating
 
-    def add_error_listener(self, l):
-        self.__error_listeners.append(l)
+    def add_error_listener(self, listener):
+        self.__error_listeners.append(listener)
 
-    def remove_error_listener(self, l):
-        self.__error_listeners.remove(l)
+    def remove_error_listener(self, listener):
+        self.__error_listeners.remove(listener)
 
     def _put_error(self, e):
-        for lstnr in self.__error_listeners:
-            lstnr(e, self)
+        for ls in self.__error_listeners:
+            ls(e, self)

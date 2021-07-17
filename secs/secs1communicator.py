@@ -48,13 +48,6 @@ class MsgAndRecvBytesWaitingQueuing(secs.WaitingQueuing):
                 with self._v_cdt:
                     self._v_cdt.notify_all()
 
-    def pop_msg(self):
-        with self._v_lock:
-            if self.__msg_queue:
-                return self.__msg_queue.pop(0)
-            else:
-                return None
-
     def poll_either(self, timeout=None):
 
         with self._open_close_lock:
@@ -63,7 +56,7 @@ class MsgAndRecvBytesWaitingQueuing(secs.WaitingQueuing):
 
         with self._v_lock:
             if self.__msg_queue:
-                return (self.__msg_queue[0], None)
+                return (self.__msg_queue.pop(0), None)
 
         with self._v_cdt:
             v = self._poll_vv()
@@ -78,9 +71,23 @@ class MsgAndRecvBytesWaitingQueuing(secs.WaitingQueuing):
 
         with self._v_lock:
             if self.__msg_queue:
-                return (self.__msg_queue[0], None)
+                return (self.__msg_queue.pop(0), None)
 
         return (None, self._poll_vv())
+
+    def recv_bytes_garbage(self, timeout):
+
+        with self._open_close_lock:
+            if self._closed or not self._opened:
+                return;
+
+        with self._v_lock:
+            del self._vv[:]
+
+        while True:
+            v = self.poll(timeout)
+            if v is None:
+                return
 
 
 class SendSecs1MessagePack:
@@ -98,69 +105,17 @@ class SendSecs1MessagePack:
     def next_block(self):
         self.__present += 1
 
-
-class Secs1CircuitResult:
-
-    SENDED = 0x1
-    ERROR = 0x2
-    RESET_TIMEOUT_T3 = 0x4
-    RECEIVED = 0x8
+    def reset_block(self):
+        self.__present = 0
 
 
 class Secs1Circuit:
 
-    __ENQ = 0x5
-    __EOT = 0x4
-    __ACK = 0x6
-    __NAK = 0x15
-    __BYTES_ENQ = bytes([__ENQ])
-    __BYTES_EOT = bytes([__EOT])
-    __BYTES_ACK = bytes([__ACK])
-    __BYTES_NAK = bytes([__NAK])
-
     def __init__(self, parent):
-        self.__parent = parent
-        self.__msg_and_bytes_queue = MsgAndRecvBytesWaitingQueuing()
-        self.__recv_blocks = list()
         self._open_close_rlock = threading.RLock()
         self._opened = False
         self._closed = False
 
-    def __enter__(self):
-        self.open()
-        return self
-    
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
-
-    def open(self):
-
-        with self._open_close_rlock:
-            if self._closed:
-                raise RuntimeError("Already closed")
-            if self._opened:
-                raise RuntimeError("Already opened")
-            self._opened = True
-
-        threading.Thread(target=self.__circuit).start()
-
-    def close(self):
-
-        with self._open_close_rlock:
-            if self._closed:
-                return
-            self._closed = True
-        
-        self.__msg_and_bytes_queue.close()
-
-    def put_recv_bytes(self, bs):
-        self.__msg_and_bytes_queue.put_recv_bytes(bs)
-
-    def entry_msg(self, msg):
-        self.__msg_and_bytes_queue.entry_msg(msg)
-
-    def __send_bytes(self, bs):
-        self.__parent._send_bytes(bs)
 
     def __circuit(self):
 
@@ -242,14 +197,10 @@ class Secs1Circuit:
 
                 except Secs1CommunicatorError as e:
 
-                    self.__msg_and_bytes_queue.pop_msg()
-
                     #TODO
                     pass
 
                 except Secs1SendMessageError as e:
-
-                    self.__msg_and_bytes_queue.pop_msg()
 
                     #TODO
                     pass
@@ -361,11 +312,6 @@ class Secs1Circuit:
         b = (block[-2] << 8) | block[-1]
         return a == b
 
-    def __recv_garbage(self):
-        while True:
-            v = self.__msg_and_bytes_queue.poll(self.__parent.timeout_t1)
-            if v is None:
-                return
 
     def __receiving_append(self, block):
 
@@ -397,13 +343,17 @@ class Secs1Circuit:
             if b == self.__ENQ:
                 self.__receiving()
 
-    def __sending(self, msg_pack):
-        self.__send_bytes(msg_pack.present_block().to_bytes())
-        b = self.__msg_and_bytes_queue.poll(self.__parent.timeout_t2)
-        return b == self.__ACK
-
 
 class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
+
+    __ENQ = 0x5
+    __EOT = 0x4
+    __ACK = 0x6
+    __NAK = 0x15
+    __BYTES_ENQ = bytes([__ENQ])
+    __BYTES_EOT = bytes([__EOT])
+    __BYTES_ACK = bytes([__ACK])
+    __BYTES_NAK = bytes([__NAK])
 
     __DEFAULT_RETRY = 3
 
@@ -412,8 +362,11 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         self.is_master = is_master
         self.retry = kwargs.get('retry', self.__DEFAULT_RETRY)
 
-        self._recv_all_msg_putter = secs.CallbackQueuing(self._put_recv_all_msg)
-        self._sended_msg_putter = secs.CallbackQueuing(self._put_sended_msg)
+        self.__msg_and_bytes_queue = MsgAndRecvBytesWaitingQueuing()
+        self.__recv_blocks = list()
+
+        self.__recv_all_msg_putter = secs.CallbackQueuing(self._put_recv_all_msg)
+        self.__sended_msg_putter = secs.CallbackQueuing(self._put_sended_msg)
 
 
     @property
@@ -448,23 +401,23 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                 raise ValueError("retry-value require >= 0")
     
     def _open(self):
-        pass
+        self.__msg_and_bytes_queue.open()
+        self.__recv_all_msg_putter.open()
+        self.__sended_msg_putter.open()
 
     def _close(self):
         with self._open_close_rlock:
-            if self.is_closed():
+            if self.is_closed:
                 return
             self._set_closed()
+
+        self.__msg_and_bytes_queue.close()
+        self.__recv_all_msg_putter.close()
+        self.__sended_msg_putter.close()
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         return self.send_secs1_msg(
             secs.Secs1Message(strm, func, wbit, secs2body, system_bytes, device_id, self.is_equip))
-
-    def _send_bytes(self, bs):
-        # prototype
-        return 0
-
-    
 
     def send_secs1_msg(self, msg):
 
@@ -484,3 +437,83 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         
         else:
             return None
+
+    def _put_recv_bytes(self, bs):
+        self.__msg_and_bytes_queue.put_recv_bytes(bs)
+
+    def entry_msg(self, msg):
+        self.__msg_and_bytes_queue.entry_msg(msg)
+
+    def _send_bytes(self, bs):
+        # prototype
+        raise NotImplementedError()
+
+    def __circuit(self):
+
+        while True:
+
+            msg, b = self.__msg_and_bytes_queue.poll_either()
+
+            if msg is not None:
+
+                try:
+                    pack = SendSecs1MessagePack(msg)
+
+                    count = 0
+                    while count <= self.retry:
+
+                        #TODO
+                        #next
+                        pass
+                except Secs1CommunicatorError as e:
+                    self._put_error(e)
+                except Secs1SendMessageError as e:
+                    self._put_error(e)
+
+            elif b is not None:
+
+                if b == self.__ENQ:
+
+                    try:
+                        self.__circuit_receiving()
+                    except Secs1CommunicatorError as e:
+                        self._put_error(e)
+
+            else:
+                return
+
+    def __circuit_sending(self, block):
+
+        self._send_bytes(block.to_bytes())
+
+        b = self.__msg_and_bytes_queue.poll(self.timeout_t2)
+
+        if b is None:
+
+            #TODO
+            #Timeout-T2
+            #put_error
+            return False
+
+        elif b == self.__ACK:
+
+            return True
+
+        else:
+
+            #TODO
+            #Not recv ACK
+            #put_error
+            return False
+
+    def __circuit_receiving(self):
+
+        try:
+            self.__send_bytes(self.__BYTES_EOT)
+
+            bb = list()
+
+            #TODO
+
+        except Exception as e:
+            self._put_error(e)
