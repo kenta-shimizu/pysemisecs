@@ -75,13 +75,10 @@ class HsmsSsConnection:
     
     def open(self):
 
-        self._recv_all_msg_putter.open()
-        self._sended_msg_putter.open()
-
         def _f():
 
             with secs.CallbackQueuing(self._rpm_cb) as pmq, \
-                secs.WaitingQueuing() as llq:
+                    secs.WaitingQueuing() as llq:
 
                 def _recv_bytes():
 
@@ -109,9 +106,9 @@ class HsmsSsConnection:
                             bodys = list()
                             pos = 0
                             size = (heads[0] << 24
-                                | heads[1] << 16
-                                | heads[2] << 8
-                                | heads[3]) - 10
+                                    | heads[1] << 16
+                                    | heads[2] << 8
+                                    | heads[3]) - 10
 
                             while pos < size:
                                 r = llq.put_to_list(bodys, pos, size, self._parent.timeout_t8)
@@ -273,10 +270,12 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
             )
 
     def get_protocol(self):
-        return None
+        # prototype
+        raise NotImplementedError()
     
     def get_ipaddress(self):
-        return (None, None)
+        # prototype
+        raise NotImplementedError()
     
     def _close(self):
         with self._open_close_rlock:

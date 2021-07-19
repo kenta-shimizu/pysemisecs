@@ -52,35 +52,26 @@ class AbstractQueuing:
         self._v_lock = threading.Lock()
         self._v_cdt = threading.Condition()
         self._vv = list()
-        self._opened = False
-        self._closed = False
-        self._open_close_lock = threading.Lock()
+        self._shutdowned = False
+        self._shutdown_lock = threading.Lock()
 
     def __enter__(self):
-        self.open()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        self.shutdown()
 
-    def open(self):
-        with self._open_close_lock:
-            if self._closed:
-                raise RuntimeError("Already closed")
-            if self._opened:
-                raise RuntimeError("Already opened")
-            self._opened = True
-
-    def close(self):
-        with self._open_close_lock:
-            if self._closed:
+    def shutdown(self):
+        with self._shutdown_lock:
+            if self._shutdowned:
                 return
-            self._closed = True
+            self._shutdowned = True
+
         with self._v_cdt:
             self._v_cdt.notify_all()
 
     def put(self, value):
-        if value:
+        if value is not None:
             with self._v_lock:
                 self._vv.append(value)
                 with self._v_cdt:
@@ -107,17 +98,14 @@ class CallbackQueuing(AbstractQueuing):
         super(CallbackQueuing, self).__init__()
         self._func = func
 
-    def open(self):
-        super().open()
-
         def _f():
             while True:
                 v = self._poll_vv()
                 if v is None:
                     with self._v_cdt:
                         self._v_cdt.wait()
-                        with self._open_close_lock:
-                            if self._closed:
+                        with self._shutdown_lock:
+                            if self._shutdowned:
                                 self._func(None)
                                 return
                 else:
@@ -133,8 +121,8 @@ class WaitingQueuing(AbstractQueuing):
 
     def poll(self, timeout=None):
 
-        with self._open_close_lock:
-            if self._closed or not self._opened:
+        with self._shutdown_lock:
+            if self._shutdowned:
                 return None
 
         with self._v_cdt:
@@ -143,8 +131,8 @@ class WaitingQueuing(AbstractQueuing):
                 return v
             self._v_cdt.wait(timeout)
 
-        with self._open_close_lock:
-            if self._closed or not self._opened:
+        with self._shutdown_lock:
+            if self._shutdowned:
                 return None
 
         return self._poll_vv()
@@ -167,18 +155,18 @@ class WaitingQueuing(AbstractQueuing):
                 else:
                     return -1
 
-        with self._open_close_lock:
-            if self._closed or not self._opened:
+        with self._shutdown_lock:
+            if self._shutdowned:
                 return -1
-                
+
         with self._v_cdt:
             rr = _f(values, pos, size)
             if rr > 0:
                 return rr
             self._v_cdt.wait(timeout)
 
-        with self._open_close_lock:
-            if self._closed or not self._opened:
+        with self._shutdown_lock:
+            if self._shutdowned:
                 return -1
 
         return _f(values, pos, size)

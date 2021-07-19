@@ -42,7 +42,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
             if self.is_open:
                 raise RuntimeError("Already opened")
             self._set_opened()
-        
+
         def _f():
 
             with secs.CallbackQueuing(self._put_recv_primary_msg) as pq:

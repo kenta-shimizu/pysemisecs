@@ -165,7 +165,7 @@ class Secs1Message(secs.SecsMessage):
             raise Secs1MessageParseError(e)
 
 
-class Secs1MessageBlock():
+class Secs1MessageBlock:
 
     def __init__(self, block_bytes):
         self._bytes = block_bytes
