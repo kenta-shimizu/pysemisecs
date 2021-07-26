@@ -1,5 +1,4 @@
 import threading
-import concurrent
 import socket
 import secs
 
@@ -41,14 +40,13 @@ class AbstractSecs1OnTcpIpCommunicator(secs.AbstractSecs1Communicator):
             while self.is_open:
                 bs = sock.recv(4096)
                 if bs:
-
-                    pass
-
+                    self._put_recv_bytes(bs)
                 else:
                     return
 
         except Exception as e:
-            self._put_error(e)
+            if self.is_open:
+                self._put_error(e)
 
 
 class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
@@ -58,10 +56,9 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
     def __init__(self, ip_address, port, session_id, is_equip, is_master, **kwargs):
         super(Secs1OnTcpIpCommunicator, self).__init__(session_id, is_equip, is_master, **kwargs)
 
-        self._tpe = concurrent.futures.ThreadPoolExecutor(max_workers=8)
         self._ipaddr = (ip_address, port)
 
-        self.__waiting_cdts = list()
+        self.__cdts = list()
         self.__open_close_local_lock = threading.Lock()
 
         self.reconnect = kwargs.get('reconnect', self.__DEFAULT_RECONNECT)
@@ -92,7 +89,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
             cdt = threading.Condition()
 
             try:
-                self.__waiting_cdts.append(cdt)
+                self.__cdts.append(cdt)
 
                 while self.is_open:
 
@@ -108,7 +105,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
                                     with cdt:
                                         cdt.notify_all()
 
-                                self.__tpe.submit(_f)
+                                threading.Thread(target=_f, daemon=True).start()
 
                                 with cdt:
                                     cdt.wait()
@@ -118,23 +115,25 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
                                 try:
                                     sock.shutdown(socket.SHUT_RDWR)
-                                except Exception:
-                                    pass
+
+                                except Exception as e:
+                                    if self.is_open:
+                                        self._put_error(e)
 
                     except Exception as e:
                         if self.is_open:
                             self._put_error(e)
                         
                     if self.is_closed:
-                        return None
+                        return
 
                     with cdt:
                         cdt.wait(self.reconnect)                  
 
             finally:
-                self.__waiting_cdts.remove(cdt)
+                self.__cdts.remove(cdt)
 
-        self.__tpe.submit(_connecting)
+        threading.Thread(target=_connecting, daemon=True).start()
 
     def _close(self):
         with self.__open_close_local_lock:
@@ -142,23 +141,36 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 return
             self._set_closed()
 
-        for cdt in self.__waiting_cdts:
+        for cdt in self.__cdts:
             with cdt:
                 cdt.notify_all()
-
-        self.__tpe.shutdown(wait=True, cancel_futures=True)
 
 
 class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
+    DEFAULT_REBIND = 5.0
+
     def __init__(self, ip_address, port, session_id, is_equip, is_master, **kwargs):
         super(Secs1OnTcpIpReceiverCommunicator, self).__init__(session_id, is_equip, is_master, **kwargs)
 
-        self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
         self.__ipaddr = (ip_address, port)
 
-        self.__waiting_cdts = list()
+        self.__cdts = list()
         self.__open_close_local_lock = threading.Lock()
+
+        self.rebind = kwargs.get('rebind', self.__DEFAULT_REBIND)
+
+    @property
+    def rebind(self):
+        pass
+
+    @rebind.getter
+    def rebind(self):
+        return self.__rebind
+
+    @rebind.setter
+    def rebind(self, val):
+        self.__rebind = float(val)
 
     def _open(self):
 
@@ -171,21 +183,43 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
         def _open_server():
 
-            #TODO
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
 
-            pass
+                    server.bind(self.__ipaddr)
+                    server.listen()
 
-        self.__tpe.submit(_open_server)
-    
+                    while self.is_open:
+
+                        sock = (server.accept())[0]
+
+                        def _f():
+
+                            # TODO
+
+                            pass
+
+                        threading.Thread(target=_f, daemon=True)
+
+            except Exception as e:
+                if self.is_open:
+                    self._put_error(e)
+
+        threading.Thread(target=_open_server, daemon=True)
+
+    def __accept(self, sock):
+
+        # TODO
+
+        pass
+
     def _close(self):
         with self.__open_close_local_lock:
             if self.is_closed:
                 return
             self._set_closed()
 
-        for cdt in self.__waiting_cdts:
+        for cdt in self.__cdts:
             with cdt:
                 cdt.notify_all()
-
-        self.__tpe.shutdown(wait=True, cancel_futures=True)
 

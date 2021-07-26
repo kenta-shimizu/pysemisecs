@@ -72,8 +72,8 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
     def _accept_socket(self, sock):
 
         with secs.CallbackQueuing(self._put_recv_primary_msg) as pq, \
-            secs.WaitingQueuing() as wq, \
-            secs.HsmsSsConnection(sock, self, wq.put) as conn:
+                secs.WaitingQueuing() as wq, \
+                secs.HsmsSsConnection(sock, self, wq.put) as conn:
 
             cdt = threading.Condition()
 

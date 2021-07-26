@@ -112,14 +112,16 @@ class SecsMessage:
 
     def _device_id(self):
         # prototype
-        return -1
+        raise NotImplementedError()
 
     def get_system_bytes(self):
         return (self._header10bytes())[6:10]
 
     def _header10bytes(self):
-        return bytes(10)
-        
+        # prototype
+        # return bytes(10)
+        raise NotImplementedError()
+
     def _header10bytes_str(self):
 
         if self.__cache_header10bytes_str is None:

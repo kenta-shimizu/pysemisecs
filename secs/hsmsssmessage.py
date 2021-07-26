@@ -246,11 +246,17 @@ class HsmsSsDataMessage(HsmsSsMessage):
     def _device_id(self):
         return self.session_id
 
+
 class HsmsSsControlMessage(HsmsSsMessage):
 
     def __init__(self, system_bytes, control_type):
         super(HsmsSsControlMessage, self).__init__(0, 0, False, None, system_bytes, control_type)
         self._cache_header10bytes = None
+
+    CONTROL_DEVICE_ID = -1
+
+    def _device_id(self):
+        return self.CONTROL_DEVICE_ID
 
     def _header10bytes(self):
         if self._cache_header10bytes is None:

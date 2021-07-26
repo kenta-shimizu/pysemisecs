@@ -87,23 +87,23 @@ class Secs1Message(secs.SecsMessage):
             m = len(bs)
             x = m - from_pos
             if x > 244:
-                return (bs[from_pos:(from_pos + 244)], 244, False)
+                return bs[from_pos:(from_pos + 244)], 244, False
             else:
-                return (bs[from_pos:m], x, True)
+                return bs[from_pos:m], x, True
 
-        def _hh(hh, num, ebit):
+        def _hh(l_hh, num, l_ebit):
             b4 = (num >> 8) & 0x7F
-            if ebit:
+            if l_ebit:
                 b4 |= 0x80
             b5 = num & 0xFF
             return bytes([
-                hh[0], hh[1], hh[2], hh[3],
+                l_hh[0], l_hh[1], l_hh[2], l_hh[3],
                 b4, b5,
-                hh[6], hh[7], hh[8], hh[9]
+                l_hh[6], l_hh[7], l_hh[8], l_hh[9]
             ])
 
-        def _sum(hh, bb):
-            x = sum([i for i in hh]) + sum([i for i in bb])
+        def _sum(l_hh, l_bb):
+            x = sum([i for i in l_hh]) + sum([i for i in l_bb])
             return bytes([((x >> 8) & 0xFF), (x & 0xFF)])
         
         if self.__cache_blocks is None:
