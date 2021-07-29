@@ -248,7 +248,7 @@ class Gem:
         except secs.Secs2BodyParseError as e:
             raise secs.Secs2BodyParseError("S2F18 not time")
 
-    def s2f18Now(self, primary_msg):
+    def s2f18_now(self, primary_msg):
         return self.s2f18(primary_msg, Clock.now())
 
     def s2f18(self, primary_msg, clock):
@@ -260,7 +260,7 @@ class Gem:
         
         return self._comm.reply(primary_msg, 2, 18, False, s2b)
 
-    def s2f31Now(self):
+    def s2f31_now(self):
         return self.s2f31(Clock.now())
 
     def s2f31(self, clock):

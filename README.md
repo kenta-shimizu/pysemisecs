@@ -213,7 +213,7 @@ Access from `.gem` property.
 - Reply S2F18 Now examples
 
 ```python
-    active.gem.s2f18Now(primary_s2f17_msg)
+    active.gem.s2f18_now(primary_s2f17_msg)
     active.gem.s2f18(primary_s2f17_msg, secs.Clock.now())
     active.gem.s2f18(primary_s2f17_msg, secs.Clock(datetime.datetime.now()))
 ```
@@ -221,7 +221,7 @@ Access from `.gem` property.
 - Send S2F31 Now examples
 
 ```puthon
-    tiack = active.gem.s2f31Now()
+    tiack = active.gem.s2f31_now()
     tiack = active.gem.s2f31(secs.Clock.now())
     tiack = active.gem.s2f31(secs.Clock(datetime.datetime.now()))
 ```
@@ -229,7 +229,7 @@ Access from `.gem` property.
 - Receive S2F31, parse to `datetime`, reply S2F32
 
 ```python
-    clock clock = secs.Clock.from_ascii(primary_s2f31_msg.secs2body)
+    clock = secs.Clock.from_ascii(primary_s2f31_msg.secs2body)
     dt = clock.to_datetime()
     passive.gem.s2f32(primary_s2f31_msg, secs.TIACK.OK)
 ```
