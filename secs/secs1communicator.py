@@ -224,8 +224,8 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
 
     __DEFAULT_RETRY = 3
 
-    def __init__(self, session_id, is_equip, is_master, **kwargs):
-        super(AbstractSecs1Communicator, self).__init__(session_id, is_equip, **kwargs)
+    def __init__(self, device_id, is_equip, is_master, **kwargs):
+        super(AbstractSecs1Communicator, self).__init__(device_id, is_equip, **kwargs)
         self.is_master = is_master
         self.retry = kwargs.get('retry', self.__DEFAULT_RETRY)
 
