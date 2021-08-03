@@ -68,7 +68,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
     def __init__(self, ip_address, port, device_id, is_equip, is_master, **kwargs):
         super(Secs1OnTcpIpCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
 
-        self._ipaddr = (ip_address, port)
+        self.__ipaddr = (ip_address, port)
 
         self.__cdts = list()
         self.__open_close_local_lock = threading.Lock()
@@ -110,7 +110,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
                             try:
                                 self._add_socket(sock)
-                                sock.connect(self._ipaddr)
+                                sock.connect(self.__ipaddr)
 
                                 self._interruptable_reading(sock, cdt)
 
@@ -152,7 +152,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
 class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
-    DEFAULT_REBIND = 5.0
+    __DEFAULT_REBIND = 5.0
 
     def __init__(self, ip_address, port, device_id, is_equip, is_master, **kwargs):
         super(Secs1OnTcpIpReceiverCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
@@ -217,7 +217,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
             finally:
                 self.__cdts.remove(cdt)
 
-        threading.Thread(target=_open_server, daemon=True)
+        threading.Thread(target=_open_server, daemon=True).start()
 
     def __accept(self, sock):
 
