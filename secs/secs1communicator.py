@@ -236,6 +236,8 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         self.__recv_all_msg_putter = secs.CallbackQueuing(self._put_recv_all_msg)
         self.__sended_msg_putter = secs.CallbackQueuing(self._put_sended_msg)
 
+        self.__ths = list()
+
     @property
     def is_master(self):
         pass
@@ -268,21 +270,35 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                 raise ValueError("retry-value require >= 0")
 
     def _open(self):
-        def __f():
-            while self.__circuit():
-                pass
+        with self._open_close_rlock:
+            if self.is_closed:
+                raise RuntimeError("Already closed")
+            if self.is_open:
+                raise RuntimeError("Already opened")
 
-        threading.Thread(target=__f, daemon=True).start()
+            def _f():
+                while self.__circuit():
+                    pass
+
+            th = threading.Thread(target=_f, daemon=True)
+            th.start()
+            self.__ths.append(th)
+
+            self._set_opened()
 
     def _close(self):
         with self._open_close_rlock:
             if self.is_closed:
                 return
+
             self._set_closed()
 
-        self.__msg_and_bytes_queue.shutdown()
-        self.__recv_all_msg_putter.shutdown()
-        self.__sended_msg_putter.shutdown()
+            self.__msg_and_bytes_queue.shutdown()
+            self.__recv_all_msg_putter.shutdown()
+            self.__sended_msg_putter.shutdown()
+
+            for th in self.__ths:
+                th.join(0.1)
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         return self.send_secs1_msg(
@@ -386,9 +402,9 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                     "Send-Message Retry-Over",
                     pack.secs1msg()))
 
-            except Secs1CommunicatorError as e:
-                pack.notify_except(e)
             except Secs1SendMessageError as e:
+                pack.notify_except(e)
+            except Secs1CommunicatorError as e:
                 pack.notify_except(e)
 
             return True
@@ -431,6 +447,7 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
             # TODO
             # Not recv ACK
             # put_error
+
             return False
 
     def __circuit_receiving(self):
@@ -503,21 +520,39 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
 
                 prev_block = self.__recv_blocks[-1]
 
-                # TODO
+                if prev_block.is_next_block(block):
 
-                pass
+                    self.__recv_blocks.append(block)
+
+                else:
+
+                    if not prev_block.is_same_block(block):
+
+                        del self.__recv_blocks[:]
+                        self.__recv_blocks.append(block)
 
             else:
                 self.__recv_blocks.append(block)
 
             if block.ebit:
 
-                # TODO
-                pass
+                try:
+                    msg = secs.Secs1Message.from_blocks(self.__recv_blocks)
+
+                    # TODO
+
+                except secs.Secs1MessageParseError as e:
+                    self._put_error(e)
+
+                finally:
+                    del self.__recv_blocks[:]
 
             else:
 
                 # TODO
+                # wait-next ENQ
+                # reset-timer
+
                 pass
 
         except Secs1CommunicatorError as e:

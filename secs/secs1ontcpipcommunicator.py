@@ -48,18 +48,6 @@ class AbstractSecs1OnTcpIpCommunicator(secs.AbstractSecs1Communicator):
             if self.is_open:
                 self._put_error(e)
 
-    def _interruptable_reading(self, sock, cdt):
-
-        def _f():
-            self._reading(sock)
-            with cdt:
-                cdt.notify_all()
-
-        threading.Thread(target=_f, daemon=True).start()
-
-        with cdt:
-            cdt.wait()
-
 
 class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
@@ -70,8 +58,8 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
         self.__ipaddr = (ip_address, port)
 
+        self.__ths = list()
         self.__cdts = list()
-        self.__open_close_local_lock = threading.Lock()
 
         self.reconnect = kwargs.get('reconnect', self.__DEFAULT_RECONNECT)
 
@@ -88,66 +76,86 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
         self.__reconnect = float(val)
 
     def _open(self):
-
-        with self.__open_close_local_lock:
+        with self._open_close_rlock:
             if self.is_closed:
                 raise RuntimeError("Already closed")
             if self.is_open:
                 raise RuntimeError("Already opened")
-            self._set_opened()
 
-        def _connecting():
+            def _connecting():
 
-            cdt = threading.Condition()
+                cdt = threading.Condition()
 
-            try:
-                self.__cdts.append(cdt)
+                try:
+                    self.__cdts.append(cdt)
 
-                while self.is_open:
+                    while self.is_open:
 
-                    try:
-                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-
-                            try:
-                                self._add_socket(sock)
-                                sock.connect(self.__ipaddr)
-
-                                self._interruptable_reading(sock, cdt)
-
-                            finally:
-                                self._remove_socket(sock)
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
                                 try:
-                                    sock.shutdown(socket.SHUT_RDWR)
+                                    self._add_socket(sock)
+                                    sock.connect(self.__ipaddr)
 
-                                except Exception as e:
-                                    if self.is_open:
-                                        self._put_error(e)
+                                    def _f():
+                                        self._reading(sock)
+                                        with cdt:
+                                            cdt.notify_all()
 
-                    except Exception as e:
-                        if self.is_open:
-                            self._put_error(e)
-                        
-                    if self.is_closed:
-                        return
+                                    th_r = threading.Thread(target=_f, daemon=True)
+                                    th_r.start()
+                                    self.__ths.append(th_r)
 
-                    with cdt:
-                        cdt.wait(self.reconnect)
+                                    with cdt:
+                                        cdt.wait()
 
-            finally:
-                self.__cdts.remove(cdt)
+                                finally:
+                                    self._remove_socket(sock)
 
-        threading.Thread(target=_connecting, daemon=True).start()
+                                    try:
+                                        sock.shutdown(socket.SHUT_RDWR)
+
+                                    except Exception as e:
+                                        if self.is_open:
+                                            self._put_error(e)
+
+                        except Exception as e:
+                            if self.is_open:
+                                self._put_error(e)
+
+                        if self.is_closed:
+                            return
+
+                        with cdt:
+                            cdt.wait(self.reconnect)
+
+                finally:
+                    self.__cdts.remove(cdt)
+
+            th = threading.Thread(target=_connecting, daemon=True)
+            th.start()
+            self.__ths.append(th)
+
+            super()._open()
+
+            self._set_opened()
 
     def _close(self):
-        with self.__open_close_local_lock:
+        with self._open_close_rlock:
             if self.is_closed:
                 return
+
+            super()._close()
+
             self._set_closed()
 
-        for cdt in self.__cdts:
-            with cdt:
-                cdt.notify_all()
+            for cdt in self.__cdts:
+                with cdt:
+                    cdt.notify_all()
+
+            for th in self.__ths:
+                th.join(0.1)
 
 
 class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
@@ -159,8 +167,8 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
         self.__ipaddr = (ip_address, port)
 
+        self.__ths = list()
         self.__cdts = list()
-        self.__open_close_local_lock = threading.Lock()
 
         self.rebind = kwargs.get('rebind', self.__DEFAULT_REBIND)
 
@@ -177,47 +185,55 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
         self.__rebind = float(val)
 
     def _open(self):
-
-        with self.__open_close_local_lock:
+        with self._open_close_rlock:
             if self.is_closed:
                 raise RuntimeError("Already closed")
             if self.is_open:
                 raise RuntimeError("Already opened")
+
+            def _open_server():
+
+                cdt = threading.Condition()
+
+                try:
+                    self.__cdts.append(cdt)
+
+                    while self.is_open:
+
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+
+                                server.bind(self.__ipaddr)
+                                server.listen()
+
+                                while self.is_open:
+
+                                    sock = (server.accept())[0]
+
+                                    th_a = threading.Thread(target=self.__accept, args=(sock,), daemon=True)
+                                    th_a.start()
+                                    self.__ths.append(th_a)
+
+                        except Exception as e:
+                            if self.is_open:
+                                self._put_error(e)
+
+                        if self.is_closed:
+                            return
+
+                        with cdt:
+                            cdt.wait(self.rebind)
+
+                finally:
+                    self.__cdts.remove(cdt)
+
+            th = threading.Thread(target=_open_server, daemon=True)
+            th.start()
+            self.__ths.append(th)
+
+            super()._open()
+
             self._set_opened()
-
-        def _open_server():
-
-            cdt = threading.Condition()
-
-            try:
-                self.__cdts.append(cdt)
-
-                while self.is_open:
-
-                    try:
-                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-
-                            server.bind(self.__ipaddr)
-                            server.listen()
-
-                            while self.is_open:
-                                sock = (server.accept())[0]
-                                threading.Thread(target=self.__accept, args=(sock,), daemon=True).start()
-
-                    except Exception as e:
-                        if self.is_open:
-                            self._put_error(e)
-
-                    if self.is_closed:
-                        return
-
-                    with cdt:
-                        cdt.wait(self.rebind)
-
-            finally:
-                self.__cdts.remove(cdt)
-
-        threading.Thread(target=_open_server, daemon=True).start()
 
     def __accept(self, sock):
 
@@ -229,7 +245,17 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 self._add_socket(sock)
                 self.__cdts.append(cdt)
 
-                self._interruptable_reading(sock, cdt)
+                def _f():
+                    self._reading(sock)
+                    with cdt:
+                        cdt.notify_all()
+
+                th_r = threading.Thread(target=_f, daemon=True)
+                th_r.start()
+                self.__ths.append(th_r)
+
+                with cdt:
+                    cdt.wait()
 
             finally:
                 self._remove_socket(sock)
@@ -243,12 +269,18 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                         self._put_error(e)
 
     def _close(self):
-        with self.__open_close_local_lock:
+        with self._open_close_rlock:
             if self.is_closed:
                 return
+
+            super()._close()
+
             self._set_closed()
 
-        for cdt in self.__cdts:
-            with cdt:
-                cdt.notify_all()
+            for cdt in self.__cdts:
+                with cdt:
+                    cdt.notify_all()
+
+            for th in self.__ths:
+                th.join(0.1)
 
