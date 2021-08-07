@@ -65,9 +65,9 @@ This library is SEMI-SECS-communicate implementation on Python3.
     active.open()
 ```
 
-- For use SECS-I-on-PySerial
+- For use SECS-I-on-pySerial
 
-  For use, must install [PySerial](https://pypi.org/project/pyserial/)
+  For use, must install [pySerial](https://pypi.org/project/pyserial/)
 
 ```python
     building...
