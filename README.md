@@ -77,6 +77,9 @@ This library is SEMI-SECS-communicate implementation on Python3.
 - For use SECS-I-on-TCP/IP
 
 ```python
+    # This is connect/client type connection.
+    # This and 'Secs1OnTcpIpReceiverCommunicator' are a pair.
+   
     secs1c = secs.Secs1OnTcpIpCommunicator(
         ip_address='127.0.0.1',
         port=23000,
@@ -98,6 +101,9 @@ This library is SEMI-SECS-communicate implementation on Python3.
 - For use SECS-I-on-TCP/IP-Receiver
 
 ```python
+    # This is bind/server type connection.
+    # This and 'Secs1OnTcpIpCommunicator' are a pair.
+
     secs1r = secs.Secs1OnTcpIpReceiverCommunicator(
         ip_address='127.0.0.1',
         port=23000,
