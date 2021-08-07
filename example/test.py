@@ -1,5 +1,4 @@
 import unittest
-import time
 import secs
 
 class Test(unittest.TestCase):
@@ -404,7 +403,7 @@ class Test(unittest.TestCase):
 
             with secs1c:
                 secs1c.open_and_wait_until_communicating()
-                
+
                 secs1r.open_and_wait_until_communicating()
 
                 try:
