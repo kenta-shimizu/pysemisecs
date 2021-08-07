@@ -95,7 +95,6 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
                             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
                                 try:
-                                    self._add_socket(sock)
                                     sock.connect(self.__ipaddr)
 
                                     def _f():
@@ -107,15 +106,17 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
                                     th_r.start()
                                     self.__ths.append(th_r)
 
-                                    with cdt:
-                                        cdt.wait()
+                                    try:
+                                        self._add_socket(sock)
+
+                                        with cdt:
+                                            cdt.wait()
+                                    finally:
+                                        self._remove_socket(sock)
 
                                 finally:
-                                    self._remove_socket(sock)
-
                                     try:
                                         sock.shutdown(socket.SHUT_RDWR)
-
                                     except Exception as e:
                                         if self.is_open:
                                             self._put_error(e)
@@ -242,7 +243,6 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
             cdt = threading.Condition()
 
             try:
-                self._add_socket(sock)
                 self.__cdts.append(cdt)
 
                 def _f():
@@ -254,16 +254,20 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 th_r.start()
                 self.__ths.append(th_r)
 
-                with cdt:
-                    cdt.wait()
+                try:
+                    self._add_socket(sock)
+                    
+                    with cdt:
+                        cdt.wait()
+
+                finally:
+                    self._remove_socket(sock)
 
             finally:
-                self._remove_socket(sock)
                 self.__cdts.remove(cdt)
 
                 try:
                     sock.shutdown(socket.SHUT_RDWR)
-
                 except Exception as e:
                     if self.is_open:
                         self._put_error(e)

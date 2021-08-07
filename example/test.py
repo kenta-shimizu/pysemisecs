@@ -1,4 +1,5 @@
 import unittest
+import time
 import secs
 
 class Test(unittest.TestCase):
@@ -31,6 +32,38 @@ class Test(unittest.TestCase):
             timeout_t8=6.0,
             gem_clock_type=secs.ClockType.A16,
             name='host-active-comm'
+        )
+
+    def __build_equip_master(self):
+        return secs.Secs1OnTcpIpCommunicator(
+            ip_address='127.0.0.1',
+            port=23000,
+            device_id=10,
+            is_equip=True,
+            is_master=True,
+            timeout_t1=1.0,
+            timeout_t2=15.0,
+            timeout_t3=45.0,
+            timeout_t4=45.0,
+            gem_mdln='MDLN-A',
+            gem_softrev='000001',
+            gem_clock_type=secs.ClockType.A16,
+            name='equip-master-comm'
+        )
+
+    def __build_host_slave(self):
+        return secs.Secs1OnTcpIpReceiverCommunicator(
+            ip_address='127.0.0.1',
+            port=23000,
+            device_id=10,
+            is_equip=False,
+            is_master=False,
+            timeout_t1=1.0,
+            timeout_t2=15.0,
+            timeout_t3=45.0,
+            timeout_t4=45.0,
+            gem_clock_type=secs.ClockType.A16,
+            name='host-slave-comm'
         )
 
     def test_hsmsss_standard(self):
@@ -120,7 +153,7 @@ class Test(unittest.TestCase):
                 except Exception as e:
                     raise e
 
-    def test_sml(self):
+    def test_hsmsss_sml(self):
 
         passive = self.__build_passive()
         active = self.__build_active()
@@ -192,7 +225,7 @@ class Test(unittest.TestCase):
                 except Exception as e:
                     raise e
 
-    def test_gem(self):
+    def test_hsmsss_gem(self):
 
         passive = self.__build_passive()
         active = self.__build_active()
@@ -256,7 +289,7 @@ class Test(unittest.TestCase):
                 if strm == 2:
                     if func == 17:
                         if wbit:
-                            comm.gem.s2f18Now(primary)
+                            comm.gem.s2f18_now(primary)
 
             except Exception as e:
                 raise e
@@ -277,7 +310,7 @@ class Test(unittest.TestCase):
                     onlack = active.gem.s1f17()
                     self.assertEqual(secs.ONLACK.OK, onlack)
 
-                    tiack = active.gem.s2f31Now()
+                    tiack = active.gem.s2f31_now()
                     self.assertEqual(secs.TIACK.OK, tiack)
 
                     clock = passive.gem.s2f17()
@@ -289,6 +322,109 @@ class Test(unittest.TestCase):
                 except Exception as e:
                     raise e
 
+    def test_secs1_gem(self):
+
+        secs1c = self.__build_equip_master()
+        secs1r = self.__build_host_slave()
+
+        def _recv_equip_master(primary, comm):
+
+            strm = primary.strm
+            func = primary.func
+            wbit = primary.wbit
+            
+            def _sxf0(x):
+                comm.reply(primary, x, 0, False)
+
+            try:
+                if strm == 1:
+
+                    if func == 13:
+                        if wbit:
+                            comm.gem.s1f14(primary, secs.COMMACK.OK)
+
+                    elif func == 15:
+                        if wbit:
+                            comm.gem.s1f16(primary)
+
+                    elif func == 17:
+                        if wbit:
+                            comm.gem.s1f18(primary, secs.ONLACK.OK)
+
+                    else:
+                        if wbit:
+                            _sxf0(strm)
+                        comm.gem.s9f5(primary)
+
+
+                elif strm == 2:
+
+                    if func == 31:
+                        if wbit:
+                            comm.gem.s2f32(primary, secs.TIACK.OK)
+
+                    else:
+                        if wbit:
+                            _sxf0(strm)
+                        comm.get.s9f5(primary)
+
+                else:
+                    if wbit:
+                        _sxf0(strm)
+                    comm.get.s9f3(primary)
+
+            except Exception as e:
+                raise e
+
+        def _recv_host_slave(primary, comm):
+
+            strm = primary.strm
+            func = primary.func
+            wbit = primary.wbit
+
+            try:
+                if strm == 1:
+                    if func == 13:
+                        if wbit:
+                            comm.gem.s1f14(primary, secs.COMMACK.OK)
+
+                elif strm == 2:
+                    if func == 17:
+                        if wbit:
+                            comm.gem.s2f18_now(primary)
+
+            except Exception as e:
+                raise e
+
+        secs1c.add_recv_primary_msg_listener(_recv_equip_master)
+        secs1r.add_recv_primary_msg_listener(_recv_host_slave)
+
+        with secs1r:
+            secs1r.open()
+
+            with secs1c:
+                secs1c.open_and_wait_until_communicating()
+                
+                secs1r.open_and_wait_until_communicating()
+
+                try:
+                    commack = secs1r.gem.s1f13()
+                    self.assertEqual(secs.COMMACK.OK, commack)
+
+                    onlack = secs1r.gem.s1f17()
+                    self.assertEqual(secs.ONLACK.OK, onlack)
+
+                    tiack = secs1r.gem.s2f31_now()
+                    self.assertEqual(secs.TIACK.OK, tiack)
+
+                    clock = secs1c.gem.s2f17()
+                    self.assertEqual(16, len(clock.to_a16()))
+
+                    oflack = secs1r.gem.s1f15()
+                    self.assertEqual(secs.OFLACK.OK, oflack)
+
+                except Exception as e:
+                    raise e
 
 if __name__ == '__main__':
     unittest.main()

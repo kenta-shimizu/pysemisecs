@@ -65,10 +65,51 @@ This library is SEMI-SECS-communicate implementation on Python3.
     active.open()
 ```
 
-- For use SECS-I example
+- For use SECS-I-on-PySerial
 
 ```python
-    # building...
+    building...
+
+```
+
+- For use SECS-I-on-TCP/IP
+
+```python
+    secs1c = secs.Secs1OnTcpIpCommunicator(
+        ip_address='127.0.0.1',
+        port=23000,
+        device_id=10,
+        is_equip=True,
+        is_master=True,
+        timeout_t1=1.0,
+        timeout_t2=15.0,
+        timeout_t3=45.0,
+        timeout_t4=45.0,
+        gem_mdln='MDLN-A',
+        gem_softrev='000001',
+        gem_clock_type=secs.ClockType.A16,
+        name='equip-master-comm')
+
+    secs1c.open()
+```
+
+- For use SECS-I-on-TCP/IP-Receiver
+
+```python
+    secs1r = secs.Secs1OnTcpIpReceiverCommunicator(
+        ip_address='127.0.0.1',
+        port=23000,
+        device_id=10,
+        is_equip=False,
+        is_master=False,
+        timeout_t1=1.0,
+        timeout_t2=15.0,
+        timeout_t3=45.0,
+        timeout_t4=45.0,
+        gem_clock_type=secs.ClockType.A16,
+        name='host-slave-comm')
+
+    secs1r.open()
 ```
 
   Notes: To shutdown, must `.close()` or use a `with` statement.

@@ -836,5 +836,6 @@ class AbstractSecsCommunicator:
         self.__error_listeners.remove(listener)
 
     def _put_error(self, e):
-        for ls in self.__error_listeners:
-            ls(e, self)
+        if e is not None:
+            for ls in self.__error_listeners:
+                ls(e, self)
