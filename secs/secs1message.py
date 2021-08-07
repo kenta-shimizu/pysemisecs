@@ -152,7 +152,7 @@ class Secs1Message(secs.SecsMessage):
             v = Secs1Message(
                 blocks[0].strm,
                 blocks[0].func,
-                blocks[0].has_wbit(),
+                blocks[0].wbit,
                 secs.Secs2BodyBuilder.from_body_bytes(bs) if bs else None,
                 blocks[0].get_system_bytes(),
                 blocks[0].device_id,

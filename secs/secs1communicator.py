@@ -233,10 +233,14 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         self.__send_reply_pack_pool = Secs1SendReplyPackPool()
         self.__recv_blocks = list()
 
+        self.__recv_primary_msg_putter = secs.CallbackQueuing(self._put_recv_primary_msg)
         self.__recv_all_msg_putter = secs.CallbackQueuing(self._put_recv_all_msg)
         self.__sended_msg_putter = secs.CallbackQueuing(self._put_sended_msg)
 
-        self.__ths = list()
+        self.__secs1_circuit_error_msg_lstnrs = list()
+        self.__secs1_circuit_error_msg_putter = secs.CallbackQueuing(self._put_secs1_circuit_error_msg)
+
+        self.__circuit_th = None
 
     @property
     def is_master(self):
@@ -280,25 +284,26 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                 while self.__circuit():
                     pass
 
-            th = threading.Thread(target=_f, daemon=True)
-            th.start()
-            self.__ths.append(th)
+            self.__circuit_th = threading.Thread(target=_f, daemon=True)
+            self.__circuit_th.start()
 
             self._set_opened()
 
     def _close(self):
-        with self._open_close_rlock:
-            if self.is_closed:
-                return
 
-            self._set_closed()
+        if self.is_closed:
+            return
 
-            self.__msg_and_bytes_queue.shutdown()
-            self.__recv_all_msg_putter.shutdown()
-            self.__sended_msg_putter.shutdown()
+        self._set_closed()
 
-            for th in self.__ths:
-                th.join(0.1)
+        self.__msg_and_bytes_queue.shutdown()
+        self.__recv_primary_msg_putter.shutdown()
+        self.__recv_all_msg_putter.shutdown()
+        self.__sended_msg_putter.shutdown()
+        self.__secs1_circuit_error_msg_putter.shutdown()
+
+        if self.__circuit_th is not None:
+            self.__circuit_th.join(0.1)
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         return self.send_secs1_msg(
@@ -339,6 +344,17 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         # prototype
         raise NotImplementedError()
 
+    def add_secs1_circuit_error_msg_listener(self, listener):
+        self.__secs1_circuit_error_msg_lstnrs.append(listener)
+
+    def remove_secs1_circuit_error_msg_listener(self, listener):
+        self.__secs1_circuit_error_msg_lstnrs.remove(listener)
+
+    def _put_secs1_circuit_error_msg(self, msg_obj):
+        if msg_obj is not None:
+            for ls in self.__secs1_circuit_error_msg_lstnrs:
+                ls(msg_obj, self)
+
     def __circuit(self):
 
         pack, b = self.__msg_and_bytes_queue.poll_either()
@@ -349,9 +365,15 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                 count = 0
                 while count <= self.retry:
 
+                    if self.is_closed:
+                        return False
+
                     self._send_bytes(self.__BYTES_ENQ)
 
                     while True:
+
+                        if self.is_closed:
+                            return False
 
                         b = self.__msg_and_bytes_queue.poll(self.timeout_t2)
 
@@ -453,7 +475,7 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
     def __circuit_receiving(self):
 
         try:
-            self.__send_bytes(self.__BYTES_EOT)
+            self._send_bytes(self.__BYTES_EOT)
 
             bb = list()
 
@@ -485,7 +507,7 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
             while pos < m:
                 r = self.__msg_and_bytes_queue.put_to_list(
                     bb, pos, m,
-                    self._timeout_t1)
+                    self.timeout_t1)
 
                 if r <= 0:
                     self._send_bytes(self.__BYTES_NAK)
@@ -513,6 +535,9 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
 
             block = secs.Secs1MessageBlock(bytes(bb))
 
+            # TODO
+            # received-block
+
             if block.device_id != self.device_id:
                 return
 
@@ -539,7 +564,11 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                 try:
                     msg = secs.Secs1Message.from_blocks(self.__recv_blocks)
 
-                    # TODO
+                    if not self.__send_reply_pack_pool.receive(msg):
+
+                        self.__recv_primary_msg_putter.put(msg)
+
+                    self.__recv_all_msg_putter.put(msg)
 
                 except secs.Secs1MessageParseError as e:
                     self._put_error(e)
@@ -549,11 +578,27 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
 
             else:
 
-                # TODO
-                # wait-next ENQ
-                # reset-timer
+                self.__send_reply_pack_pool.timer_reset(block)
 
-                pass
+                b = self.__msg_and_bytes_queue.poll(self.timeout_t4)
+
+                if b is None:
+
+                    # TODO
+                    # timeout-T4
+
+                    pass
+
+                elif b == self.__ENQ:
+
+                    self.__circuit_receiving()
+
+                else:
+
+                    # TODO
+                    # receive NOT-ENQ
+
+                    pass
 
         except Secs1CommunicatorError as e:
             self._put_error(e)

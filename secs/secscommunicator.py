@@ -238,7 +238,7 @@ class AbstractSecsCommunicator:
         
         self.__opened = False
         self.__closed = False
-        self.__open_close_rlock = threading.RLock()
+        self._open_close_rlock = threading.RLock()
 
     @property
     def gem(self):
@@ -585,7 +585,7 @@ class AbstractSecsCommunicator:
 
     @is_open.getter
     def is_open(self):
-        with self.__open_close_rlock:
+        with self._open_close_rlock:
             return self.__opened and not self.__closed
 
     @property
@@ -594,15 +594,15 @@ class AbstractSecsCommunicator:
 
     @is_closed.getter
     def is_closed(self):
-        with self.__open_close_rlock:
+        with self._open_close_rlock:
             return self.__closed
     
     def _set_opened(self):
-        with self.__open_close_rlock:
+        with self._open_close_rlock:
             self.__opened = True
 
     def _set_closed(self):
-        with self.__open_close_rlock:
+        with self._open_close_rlock:
             self.__closed = True
             with self.__comm_condition:
                 self.__comm_condition.notify_all()

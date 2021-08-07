@@ -142,20 +142,20 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
             self._set_opened()
 
     def _close(self):
-        with self._open_close_rlock:
-            if self.is_closed:
-                return
 
-            super()._close()
+        if self.is_closed:
+            return;
 
-            self._set_closed()
+        super()._close()
 
-            for cdt in self.__cdts:
-                with cdt:
-                    cdt.notify_all()
+        self._set_closed()
 
-            for th in self.__ths:
-                th.join(0.1)
+        for cdt in self.__cdts:
+            with cdt:
+                cdt.notify_all()
+
+        for th in self.__ths:
+            th.join(0.1)
 
 
 class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
@@ -269,18 +269,18 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                         self._put_error(e)
 
     def _close(self):
-        with self._open_close_rlock:
-            if self.is_closed:
-                return
 
-            super()._close()
+        if self.is_closed:
+            return
 
-            self._set_closed()
+        super()._close()
 
-            for cdt in self.__cdts:
-                with cdt:
-                    cdt.notify_all()
+        self._set_closed()
 
-            for th in self.__ths:
-                th.join(0.1)
+        for cdt in self.__cdts:
+            with cdt:
+                cdt.notify_all()
+
+        for th in self.__ths:
+            th.join(0.1)
 
