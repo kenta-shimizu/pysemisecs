@@ -1,10 +1,11 @@
+import concurrent.futures
+import threading
 import struct
 import datetime
 import os
-import re
-import threading
 import socket
-import concurrent.futures
+import re
+import importlib
 
 
 class Secs2BodyParseError(Exception):
@@ -2062,6 +2063,9 @@ class AbstractSecsCommunicator:
     def __exit__(self, exc_type, exc_value, traceback):
         self._close()
 
+    def __del__(self):
+        self._close()
+
     def send(self, strm, func, wbit, secs2body=None):
         """Send primary message
 
@@ -3780,7 +3784,7 @@ class AbstractSecs1OnTcpIpCommunicator(AbstractSecs1Communicator):
 
     def _reading(self, sock):
         try:
-            while self.is_open:
+            while not self.is_closed:
                 bs = sock.recv(4096)
                 if bs:
                     self._put_recv_bytes(bs)
@@ -3788,7 +3792,7 @@ class AbstractSecs1OnTcpIpCommunicator(AbstractSecs1Communicator):
                     return
 
         except Exception as e:
-            if self.is_open:
+            if not self.is_closed:
                 self._put_error(e)
 
 
@@ -3832,7 +3836,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 try:
                     self.__cdts.append(cdt)
 
-                    while self.is_open:
+                    while not self.is_closed:
 
                         try:
                             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -3847,32 +3851,33 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
                                     th_r = threading.Thread(target=_f, daemon=True)
                                     th_r.start()
-                                    self.__ths.append(th_r)
 
                                     try:
+                                        self.__ths.append(th_r)
                                         self._add_socket(sock)
 
                                         with cdt:
                                             cdt.wait()
                                     finally:
+                                        self.__ths.remove(th_r)
                                         self._remove_socket(sock)
 
                                 finally:
                                     try:
                                         sock.shutdown(socket.SHUT_RDWR)
                                     except Exception as e:
-                                        if self.is_open:
+                                        if not self.is_closed:
                                             self._put_error(e)
 
                         except Exception as e:
-                            if self.is_open:
+                            if not self.is_closed:
                                 self._put_error(e)
 
                         if self.is_closed:
                             return
 
                         with cdt:
-                            cdt.wait(self.reconnect)
+                            cdt.wait(timeout=self.reconnect)
 
                 finally:
                     self.__cdts.remove(cdt)
@@ -3942,7 +3947,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 try:
                     self.__cdts.append(cdt)
 
-                    while self.is_open:
+                    while not self.is_closed:
 
                         try:
                             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
@@ -3950,7 +3955,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                                 server.bind(self.__ipaddr)
                                 server.listen()
 
-                                while self.is_open:
+                                while not self.is_closed:
 
                                     sock = (server.accept())[0]
 
@@ -3959,14 +3964,14 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                                     self.__ths.append(th_a)
 
                         except Exception as e:
-                            if self.is_open:
+                            if not self.is_closed:
                                 self._put_error(e)
 
                         if self.is_closed:
                             return
 
                         with cdt:
-                            cdt.wait(self.rebind)
+                            cdt.wait(timeout=self.rebind)
 
                 finally:
                     self.__cdts.remove(cdt)
@@ -3995,9 +4000,9 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
                 th_r = threading.Thread(target=_f, daemon=True)
                 th_r.start()
-                self.__ths.append(th_r)
 
                 try:
+                    self.__ths.append(th_r)
                     self._add_socket(sock)
 
                     with cdt:
@@ -4005,6 +4010,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
                 finally:
                     self._remove_socket(sock)
+                    self.__ths.remove(th_r)
 
             finally:
                 self.__cdts.remove(cdt)
@@ -4012,7 +4018,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 try:
                     sock.shutdown(socket.SHUT_RDWR)
                 except Exception as e:
-                    if self.is_open:
+                    if not self.is_closed:
                         self._put_error(e)
 
     def _close(self):
@@ -4031,6 +4037,163 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
         for th in self.__ths:
             th.join(0.1)
 
+
+class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
+
+    __DEFAULT_REOPEN = 5.0
+
+    def __init__(self, port, baudrate, device_id, is_equip, is_master, **kwargs):
+        super(Secs1OnPySerialCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
+
+        self.__port = port
+        self.__baudrate = baudrate
+
+        self.__ths = list()
+        self.__cdts = list()
+
+        self.reopen = kwargs.get('reopen', self.__DEFAULT_REOPEN)
+
+        self.__serial = None
+        self.__serial_lock = threading.Lock()
+
+    @property
+    def reopen(self):
+        pass
+
+    @reopen.getter
+    def reopen(self):
+        return self.__reopen
+
+    @reopen.setter
+    def reopen(self, val):
+        self.__reopen = float(val)
+
+    def __set_serial(self, ser):
+        with self.__serial_lock:
+            self.__serial = ser
+            self._put_communicated(self.__serial is not None)
+
+    def __unset_serial(self):
+        with self.__serial_lock:
+            self.__serial_lock = None
+            self._put_communicated(self.__serial is not None)
+
+    def _send_bytes(self, bs):
+        with self.__serial_lock:
+            if self.__serial is None:
+                raise Secs1CommunicatorError("Not connected")
+            else:
+                try:
+                    self.__serial.write(bs)
+                except Exception as e:
+                    raise Secs1CommunicatorError(e)
+
+    def _reading(self, ser):
+        try:
+            while not self.is_closed:
+                bs = ser.read()
+                if bs:
+                    self._put_recv_bytes(bs)
+                else:
+                    return
+        except Exception as e:
+            self._put_error(e)
+
+    def _open(self):
+        with self._open_close_rlock:
+            if self.is_closed:
+                raise RuntimeError("Already closed")
+            if self.is_open:
+                raise RuntimeError("Already opened")
+
+            try:
+                serial = importlib.import_module('serial')
+            except ModuleNotFoundError as e:
+                print("Secs1OnPySerialCommunicator require 'pySerial'")
+                raise e
+
+            def _f():
+                cdt = threading.Condition()
+
+                try:
+                    self.__cdts.append(cdt)
+
+                    while not self.is_closed:
+
+                        try:
+                            ser = serial.Serial(
+                                port=self.__port,
+                                baudrate=self.__baudrate,
+                                bytesize=serial.EIGHTBITS,
+                                parity=serial.PARITY_NONE,
+                                stopbits=serial.STOPBITS_ONE
+                            )
+
+                            try:
+                                ser.open()
+
+                                def _ff():
+                                    self._reading(ser)
+                                    with cdt:
+                                        cdt.notify_all()
+
+                                th_r = threading.Thread(target=_ff, daemon=True)
+                                th_r.start()
+
+                                try:
+                                    self.__ths.append(th_r)
+                                    self.__set_serial(ser)
+
+                                    with cdt:
+                                        cdt.wait()
+
+                                finally:
+                                    self.__unset_serial()
+                                    self.__ths.remove(th_r)
+
+                            finally:
+                                try:
+                                    ser.close()
+                                except Exception as e:
+                                    if not self.is_closed:
+                                        self._put_error(e)
+
+                        except Exception as e:
+                            if not self.is_closed:
+                                self._put_error(e)
+
+                        if self.is_closed:
+                            return
+
+                        with cdt:
+                            cdt.wait(timeout=self.reopen)
+
+                finally:
+                    self.__cdts.remove(cdt)
+
+            th = threading.Thread(target=_f, daemon=True)
+            th.start()
+            self.__ths.append(th)
+
+            super()._open()
+
+            self._set_opened()
+
+    def _close(self):
+
+        if self.is_closed:
+            return
+
+        super()._close()
+
+        self._set_closed()
+
+        for cdt in self.__cdts:
+            with cdt:
+                cdt.notify_all()
+
+        for th in self.__ths:
+            th.join(0.1)
 
 
 class ClockType:

@@ -392,6 +392,11 @@ class Test(unittest.TestCase):
                         if wbit:
                             comm.gem.s2f18_now(primary)
 
+                elif strm == 6:
+                    if func == 3:
+                        self.assertEqual(9, len(primary.secs2body))
+                        self.assertEqual(10, len(primary.secs2body[0]))
+
             except Exception as e:
                 raise e
 
@@ -418,6 +423,21 @@ class Test(unittest.TestCase):
 
                     clock = secs1c.gem.s2f17()
                     self.assertEqual(16, len(clock.to_a16()))
+
+                    secs1c.send(
+                        6, 3, False,
+                        ('L', [
+                            ('U4', [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]),
+                            ('U4', [201, 202, 203, 204, 205, 206, 207, 208, 209, 210]),
+                            ('U4', [301, 302, 303, 304, 305, 306, 307, 308, 309, 310]),
+                            ('U4', [401, 402, 403, 404, 405, 406, 407, 408, 409, 410]),
+                            ('U4', [501, 502, 503, 504, 505, 506, 507, 508, 509, 510]),
+                            ('U4', [601, 602, 603, 604, 605, 606, 607, 608, 609, 610]),
+                            ('U4', [701, 702, 703, 704, 705, 706, 707, 708, 709, 710]),
+                            ('U4', [801, 802, 803, 804, 805, 806, 807, 808, 809, 810]),
+                            ('U4', [901, 902, 903, 904, 905, 906, 907, 908, 909, 910])
+                        ])
+                        )
 
                     oflack = secs1r.gem.s1f15()
                     self.assertEqual(secs.OFLACK.OK, oflack)

@@ -30,4 +30,6 @@ from secs.secs1communicator import *
 
 from secs.secs1ontcpipcommunicator import Secs1OnTcpIpCommunicator, Secs1OnTcpIpReceiverCommunicator
 
+from secs.secs1onpyserialcommunicator import Secs1OnPySerialCommunicator
+
 from secs.gem import *

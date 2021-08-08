@@ -8,7 +8,7 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
 ## Supports
 
-- SECS-I (SEMI-E4) builing...
+- SECS-I (SEMI-E4)
 - SECS-II (SEMI-E5)
 - GEM (SEMI-E30, partially)
 - HSMS-SS (SEMI-E37.1)
@@ -20,6 +20,8 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
   `import secs`  
   or append codes in `if __name__ == '__main__':`
+
+  If use `Secs1OnPySerialCommunicator`, must install [pySerial](https://pypi.org/project/pyserial/)
 
 - pip install
 
@@ -70,8 +72,22 @@ This library is SEMI-SECS-communicate implementation on Python3.
   For use, must install [pySerial](https://pypi.org/project/pyserial/)
 
 ```python
-    building...
-
+    secs1p = secs.Secs1OnPySerialCommunicator(
+        port='/dev/ttyUSB0',
+        baudrate=9600,
+        device_id=10,
+        is_equip=True,
+        is_master=True,
+        timeout_t1=1.0,
+        timeout_t2=15.0,
+        timeout_t3=45.0,
+        timeout_t4=45.0,
+        gem_mdln='MDLN-A',
+        gem_softrev='000001',
+        gem_clock_type=secs.ClockType.A16,
+        name='equip-master-comm')
+    
+    secs1p.open()
 ```
 
 - For use SECS-I-on-TCP/IP

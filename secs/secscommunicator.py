@@ -612,6 +612,9 @@ class AbstractSecsCommunicator:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self._close()
+    
+    def __del__(self):
+        self._close()
 
     def send(self, strm, func, wbit, secs2body=None):
         """Send primary message

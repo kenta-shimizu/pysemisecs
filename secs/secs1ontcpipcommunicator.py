@@ -37,7 +37,7 @@ class AbstractSecs1OnTcpIpCommunicator(secs.AbstractSecs1Communicator):
 
     def _reading(self, sock):
         try:
-            while self.is_open:
+            while not self.is_closed:
                 bs = sock.recv(4096)
                 if bs:
                     self._put_recv_bytes(bs)
@@ -45,7 +45,7 @@ class AbstractSecs1OnTcpIpCommunicator(secs.AbstractSecs1Communicator):
                     return
 
         except Exception as e:
-            if self.is_open:
+            if not self.is_closed:
                 self._put_error(e)
 
 
@@ -89,7 +89,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 try:
                     self.__cdts.append(cdt)
 
-                    while self.is_open:
+                    while not self.is_closed:
 
                         try:
                             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -104,32 +104,33 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
                                     th_r = threading.Thread(target=_f, daemon=True)
                                     th_r.start()
-                                    self.__ths.append(th_r)
 
                                     try:
+                                        self.__ths.append(th_r)
                                         self._add_socket(sock)
 
                                         with cdt:
                                             cdt.wait()
                                     finally:
+                                        self.__ths.remove(th_r)
                                         self._remove_socket(sock)
 
                                 finally:
                                     try:
                                         sock.shutdown(socket.SHUT_RDWR)
                                     except Exception as e:
-                                        if self.is_open:
+                                        if not self.is_closed:
                                             self._put_error(e)
 
                         except Exception as e:
-                            if self.is_open:
+                            if not self.is_closed:
                                 self._put_error(e)
 
                         if self.is_closed:
                             return
 
                         with cdt:
-                            cdt.wait(self.reconnect)
+                            cdt.wait(timeout=self.reconnect)
 
                 finally:
                     self.__cdts.remove(cdt)
@@ -199,7 +200,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 try:
                     self.__cdts.append(cdt)
 
-                    while self.is_open:
+                    while not self.is_closed:
 
                         try:
                             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
@@ -207,7 +208,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                                 server.bind(self.__ipaddr)
                                 server.listen()
 
-                                while self.is_open:
+                                while not self.is_closed:
 
                                     sock = (server.accept())[0]
 
@@ -216,14 +217,14 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                                     self.__ths.append(th_a)
 
                         except Exception as e:
-                            if self.is_open:
+                            if not self.is_closed:
                                 self._put_error(e)
 
                         if self.is_closed:
                             return
 
                         with cdt:
-                            cdt.wait(self.rebind)
+                            cdt.wait(timeout=self.rebind)
 
                 finally:
                     self.__cdts.remove(cdt)
@@ -252,9 +253,9 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
                 th_r = threading.Thread(target=_f, daemon=True)
                 th_r.start()
-                self.__ths.append(th_r)
 
                 try:
+                    self.__ths.append(th_r)
                     self._add_socket(sock)
                     
                     with cdt:
@@ -262,6 +263,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
                 finally:
                     self._remove_socket(sock)
+                    self.__ths.remove(th_r)
 
             finally:
                 self.__cdts.remove(cdt)
@@ -269,7 +271,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 try:
                     sock.shutdown(socket.SHUT_RDWR)
                 except Exception as e:
-                    if self.is_open:
+                    if not self.is_closed:
                         self._put_error(e)
 
     def _close(self):
