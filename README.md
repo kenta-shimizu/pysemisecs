@@ -241,6 +241,20 @@ If T3-Timeout, raise `SecsWaitReplyMessageError`.
     )
 ```
 
+## Detect Communicatable-state changed
+
+1. Add listener
+
+```
+    def _comm_listener(communicatable, comm):
+        if communicatable:
+            print('communicated')
+        else:
+            print('discommunicated')
+    
+    passive.add_communicate_listener(_comm_listener)
+```
+
 ## SML
 
 - Send Primary-Message
