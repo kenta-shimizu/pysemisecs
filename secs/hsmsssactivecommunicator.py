@@ -6,20 +6,9 @@ import secs
 
 class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
-    __PROTOCOL_NAME = 'HSMS-SS-ACTIVE'
+    __PROTOCOL = 'HSMS-SS-ACTIVE'
 
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
-        """[summary]
-
-        How to
-
-        Args:
-            ip_address ([type]): [description]
-            port ([type]): [description]
-            session_id ([type]): [description]
-            is_equip (bool): [description]
-        """
-
         super(HsmsSsActiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
 
         self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=8)
@@ -29,7 +18,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
         self.__open_close_local_lock = threading.Lock()
 
     def _get_protocol(self):
-        return self.__PROTOCOL_NAME
+        return self.__PROTOCOL
 
     def _get_ipaddress(self):
         return self.__ipaddr

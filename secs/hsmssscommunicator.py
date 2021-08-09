@@ -49,6 +49,53 @@ class HsmsSsCommunicateState:
 
 class HsmsSsConnection:
     
+    def __init__(
+        self, sock, comm,
+        recv_primary_msg_put_callback,
+        recv_all_msg_put_callback,
+        sended_msg_put_callback,
+        error_put_callback):
+
+        self.__sock = sock
+        self.__comm = comm
+        self.__put_recv_primary_msg = recv_primary_msg_put_callback
+        self.__put_recv_all_msg = recv_all_msg_put_callback
+        self.__put_sended_msg = sended_msg_put_callback
+        self.__put_error = error_put_callback
+
+        self.__close_rlock = threading.RLock()
+        self.__closed = False
+
+    def open(self):
+
+        # TODO
+
+        pass
+
+    def close(self):
+        with self.__close_rlock:
+            if self.__closed:
+                return
+            self._set_closed()
+
+        # TODO
+
+
+    def _is_closed(self):
+        with self.__close_rlock:
+            return self.__closed
+    
+    def _set_closed(self):
+        with self.__close_rlock:
+            self.__closed = True
+
+    def send(self, msg):
+        # TODO
+        pass
+
+
+class HsmsSsConnection2:
+    
     def __init__(self, sock, parent, recv_primary_msg_callback):
         self._sock = sock
         self._parent = parent
@@ -241,6 +288,10 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         self._hsmsss_comm_lock = threading.Lock()
         self._hsmsss_comm_lstnrs = list()
 
+        self.__recv_all_msg_putter = secs.CallbackQueuing(self._put_recv_all_msg)
+        self.__sended_msg_putter = secs.CallbackQueuing(self._put_sended_msg)
+        self.__error_putter = secs.CallbackQueuing(super()._put_error)
+
         hsmssscomml = kwargs.get('hsmsss_communicate', None)
         if hsmssscomml is not None:
             self.add_hsmsss_communicate_listener(hsmssscomml)
@@ -296,17 +347,39 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         """
         return self.device_id
 
+    def _put_error(self, e):
+        self.__error_putter.put(e)
+
     def _open(self):
+        with self._open_close_rlock:
+            if self.is_closed:
+                raise RuntimeError("Already closed")
+            if self.is_open:
+                raise RuntimeError("Already opened")
 
         # TODO
 
-        pass
+        self._set_opened()
     
     def _close(self):
         with self._open_close_rlock:
             if self.is_closed():
                 return
-            self._set_closed()
+        
+        self._set_closed()
+
+        self.__recv_all_msg_putter.shutdown()
+        self.__sended_msg_putter.shutdown()
+        self.__error_putter.shutdown()
+    
+    def _build_hsmsss_connection(self, sock, recv_primary_msg_callback):
+        return HsmsSsConnection2(
+            sock,
+            self,
+            recv_primary_msg_callback,
+            self.__recv_all_msg_putter.put,
+            self.__sended_msg_putter.put,
+            self.__error_putter.put)
 
     def _set_hsmsss_connection(self, conn, callback=None):
         with self._hsmsss_connection_lock:

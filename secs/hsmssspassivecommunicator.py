@@ -6,7 +6,7 @@ import secs
 
 class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
-    _PROTOCOL_NAME = 'HSMS-SS-PASSIVE'
+    __PROTOCOL = 'HSMS-SS-PASSIVE'
 
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
         super(HsmsSsPassiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
@@ -18,7 +18,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
         self.__open_close_local_lock = threading.Lock()
 
     def _get_protocol(self):
-        return self._PROTOCOL_NAME
+        return self.__PROTOCOL
 
     def _get_ipaddress(self):
         return self.__ipaddr
