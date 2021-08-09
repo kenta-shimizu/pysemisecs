@@ -28,10 +28,10 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
         self.__waiting_cdt = threading.Condition()
         self.__open_close_local_lock = threading.Lock()
 
-    def get_protocol(self):
+    def _get_protocol(self):
         return self.__PROTOCOL_NAME
 
-    def get_ipaddress(self):
+    def _get_ipaddress(self):
         return self.__ipaddr
 
     def _open(self):
@@ -53,7 +53,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
-                            sock.connect(self.get_ipaddress())
+                            sock.connect(self._get_ipaddress())
 
                             def _recv(msg):
 

@@ -17,10 +17,10 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
         self.__waiting_cdts = list()
         self.__open_close_local_lock = threading.Lock()
 
-    def get_protocol(self):
+    def _get_protocol(self):
         return self._PROTOCOL_NAME
 
-    def get_ipaddress(self):
+    def _get_ipaddress(self):
         return self.__ipaddr
 
     def _open(self):
@@ -37,7 +37,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
 
-                    server.bind(self.get_ipaddress())
+                    server.bind(self._get_ipaddress())
                     server.listen()
                     
                     cdt = threading.Condition()

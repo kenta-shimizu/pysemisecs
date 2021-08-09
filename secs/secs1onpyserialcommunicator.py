@@ -5,6 +5,7 @@ import secs
 class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
 
     __DEFAULT_REOPEN = 5.0
+    __PROTOCOL = 'SECS-I-on-pySerial'
 
     def __init__(self, port, baudrate, device_id, is_equip, is_master, **kwargs):
         super(Secs1OnPySerialCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
@@ -20,6 +21,28 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
         self.__serial = None
         self.__serial_lock = threading.Lock()
     
+    def __str__(self):
+        return str({
+            'protocol': self.__PROTOCOL,
+            'port': self.__port,
+            'baudrate': self.__baudrate,
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
+
+    def __repr__(self):
+        return repr({
+            'protocol': self.__PROTOCOL,
+            'port': self.__port,
+            'baudrate': self.__baudrate,
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
+
     @property
     def reopen(self):
         pass

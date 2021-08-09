@@ -1,6 +1,6 @@
 import threading
-import socket
 import concurrent.futures
+import socket
 import secs
 
 
@@ -233,13 +233,12 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
 
     def __init__(self, session_id, is_equip, **kwargs):
         super(AbstractHsmsSsCommunicator, self).__init__(session_id, is_equip, **kwargs)
+
         self._hsmsss_connection = None
+        self._hsmsss_connection_lock = threading.Lock()
 
-        self._hsmsss_connection_rlock = threading.RLock()
-
-        self._hsmsss_comm_rlock = threading.RLock()
         self._hsmsss_comm = HsmsSsCommunicateState.NOT_CONNECT
-    
+        self._hsmsss_comm_lock = threading.Lock()
         self._hsmsss_comm_lstnrs = list()
 
         hsmssscomml = kwargs.get('hsmsss_communicate', None)
@@ -247,35 +246,61 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
             self.add_hsmsss_communicate_listener(hsmssscomml)
 
     def __str__(self):
-        ipaddr = self.get_ipaddress()
-        return (
-            'protocol: ' + str(self.get_protocol())
-            + ', ip-address: ' + str(ipaddr[0])
-            + ':' + str(ipaddr[1])
-            + ', session-id: ' + str(self._dev_id)
-            + ', is-equip: ' + str(self._is_equip)
-            + ', communicate-state: ' + self.get_hsmsss_communicate_state()
-            + ', name: ' + self.get_name()
-            )
+        ipaddr = self._get_ipaddress()
+        return str({
+            'protocol': self._get_protocol(),
+            'ip_address': (ipaddr[0]) + ':' + str(ipaddr[1]),
+            'session_id': self.session_id,
+            'is_equip': self.is_equip,
+            'communicate_state': self.get_hsmsss_communicate_state(),
+            'name': self.name
+        })
 
     def __repr__(self):
-        return (
-            '{protocol:' + repr(self.get_protocol())
-            + ',ipaddr:' + repr(self.get_ipaddress())
-            + ',sessionid:' + repr(self._dev_id)
-            + ',isequip:' + repr(self._is_equip)
-            + ',communicatestate:' + repr(self.get_hsmsss_communicate_state())
-            + ',name:' + repr(self.get_name())
-            + '}'
-            )
+        return repr({
+            'protocol': self._get_protocol(),
+            'ip_address': self._get_ipaddress(),
+            'session_id': self.session_id,
+            'is_equip': self.is_equip,
+            'communicate_state': self.get_hsmsss_communicate_state(),
+            'name': self.name
+        })
 
-    def get_protocol(self):
+    def _get_protocol(self):
         # prototype
         raise NotImplementedError()
     
-    def get_ipaddress(self):
+    def _get_ipaddress(self):
         # prototype
         raise NotImplementedError()
+
+    @property
+    def session_id(self):
+        pass
+
+    @session_id.setter
+    def session_id(self, val):
+        """SESSION-ID setter.
+
+        Args:
+            val (int): SESSION_ID
+        """
+        self.device_id = val
+
+    @session_id.getter
+    def session_id(self):
+        """SESSION-ID getter.
+
+        Returns:
+            int: SESSION_ID
+        """
+        return self.device_id
+
+    def _open(self):
+
+        # TODO
+
+        pass
     
     def _close(self):
         with self._open_close_rlock:
@@ -284,7 +309,7 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
             self._set_closed()
 
     def _set_hsmsss_connection(self, conn, callback=None):
-        with self._hsmsss_connection_rlock:
+        with self._hsmsss_connection_lock:
             if self._hsmsss_connection is None:
                 self._hsmsss_connection = conn
                 if callback is not None:
@@ -294,7 +319,7 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
                 return False
 
     def _unset_hsmsss_connection(self, callback=None):
-        with self._hsmsss_connection_rlock:
+        with self._hsmsss_connection_lock:
             self._hsmsss_connection = None
             if callback is not None:
                 callback()
@@ -305,7 +330,7 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
 
     def send_hsmsss_msg(self, msg):
         def _f():
-            with self._hsmsss_connection_rlock:
+            with self._hsmsss_connection_lock:
                 if self._hsmsss_connection is None:
                     raise HsmsSsSendMessageError("HsmsSsCommunicator not connected", msg)
                 else:
@@ -313,60 +338,89 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         return _f().send(msg)
 
     def build_select_req(self):
-        return secs.HsmsSsControlMessage.build_select_request(self._create_system_bytes())
+        return secs.HsmsSsControlMessage.build_select_request(
+            self._create_system_bytes())
+
+    def build_select_rsp(self, primary, status):
+        return secs.HsmsSsControlMessage.build_select_response(
+            primary,
+            status)
+
+    def build_linktest_req(self):
+        return secs.HsmsSsControlMessage.build_linktest_request(
+            self._create_system_bytes())
+
+    def build_linktest_rsp(self, primary):
+        return secs.HsmsSsControlMessage.build_linktest_response(
+            primary)
+
+    def build_reject_req(self, primary, reason):
+        return secs.HsmsSsControlMessage.build_reject_request(
+            primary,
+            reason)
+
+    def build_separate_req(self):
+        return secs.HsmsSsControlMessage.build_separate_request(
+            self._create_system_bytes())
 
     def send_select_req(self):
-        return self.send_hsmsss_msg(self.build_select_req())
+        msg = self.build_select_req()
+        return self.send_hsmsss_msg(msg)
 
     def send_select_rsp(self, primary, status):
-        return self.send_hsmsss_msg(
-            secs.HsmsSsControlMessage.build_select_response(primary, status))
+        msg = self.build_select_rsp(self, primary, status)
+        return self.send_hsmsss_msg(msg)
 
     def send_linktest_req(self):
-        return self.send_hsmsss_msg(
-            secs.HsmsSsControlMessage.build_linktest_request(self._create_system_bytes()))
+        msg = self.build_linktest_req(self)
+        return self.send_hsmsss_msg(msg)
 
     def send_linktest_rsp(self, primary):
-        return self.send_hsmsss_msg(
-            secs.HsmsSsControlMessage.build_linktest_response(primary))
+        msg = self.build_linktest_rsp(primary)
+        return self.send_hsmsss_msg(msg)
 
     def send_reject_req(self, primary, reason):
-        return self.send_hsmsss_msg(
-            secs.HsmsSsControlMessage.build_reject_request(primary, reason))
-    
-    def send_separate_req(self):
-        return self.send_hsmsss_msg(
-            secs.HsmsSsControlMessage.build_separate_request(self._create_system_bytes()))
+        msg = self.build_reject_req(primary, reason)
+        return self.send_hsmsss_msg(msg)
 
-    
+    def send_separate_req(self):
+        msg = self.build_separate_req()
+        return self.send_hsmsss_msg(msg)
+
     def get_hsmsss_communicate_state(self):
-        with self._hsmsss_comm_rlock:
+        with self._hsmsss_comm_lock:
             return self._hsmsss_comm
         
-    def add_hsmsss_communicate_listener(self, l):
-        with self._hsmsss_comm_rlock:
-            self._hsmsss_comm_lstnrs.append(l)
-            l(self._hsmsss_comm, self)
+    def add_hsmsss_communicate_listener(self, listener):
+        with self._hsmsss_comm_lock:
+            self._hsmsss_comm_lstnrs.append(listener)
+            listener(self._hsmsss_comm, self)
 
-    def remove_hsmsss_communicate_listener(self, l):
-        with self._hsmsss_comm_rlock:
-            self._hsmsss_comm_lstnrs.remove(l)
+    def remove_hsmsss_communicate_listener(self, listener):
+        with self._hsmsss_comm_lock:
+            self._hsmsss_comm_lstnrs.remove(listener)
 
     def _put_hsmsss_comm_state(self, state, callback=None):
-        with self._hsmsss_comm_rlock:
+        with self._hsmsss_comm_lock:
             if state != self._hsmsss_comm:
                 self._hsmsss_comm = state
-                for lstnr in self._hsmsss_comm_lstnrs:
-                    lstnr(self._hsmsss_comm, self)
+                for ls in self._hsmsss_comm_lstnrs:
+                    ls(self._hsmsss_comm, self)
                 self._put_communicated(state == HsmsSsCommunicateState.SELECTED)
                 if callback is not None:
                     callback()
 
     def _put_hsmsss_comm_state_to_not_connected(self, callback=None):
-        self._put_hsmsss_comm_state(HsmsSsCommunicateState.NOT_CONNECT, callback)
+        self._put_hsmsss_comm_state(
+            HsmsSsCommunicateState.NOT_CONNECT,
+            callback)
 
     def _put_hsmsss_comm_state_to_connected(self, callback=None):
-        self._put_hsmsss_comm_state(HsmsSsCommunicateState.CONNECTED, callback)
+        self._put_hsmsss_comm_state(
+            HsmsSsCommunicateState.CONNECTED,
+            callback)
 
     def _put_hsmsss_comm_state_to_selected(self, callback=None):
-        self._put_hsmsss_comm_state(HsmsSsCommunicateState.SELECTED, callback)
+        self._put_hsmsss_comm_state(
+            HsmsSsCommunicateState.SELECTED,
+            callback)

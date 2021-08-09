@@ -52,6 +52,7 @@ class AbstractSecs1OnTcpIpCommunicator(secs.AbstractSecs1Communicator):
 class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
     __DEFAULT_RECONNECT = 5.0
+    __PROTOCOL = 'SECS-I-on-TCP/IP'
 
     def __init__(self, ip_address, port, device_id, is_equip, is_master, **kwargs):
         super(Secs1OnTcpIpCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
@@ -62,6 +63,26 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
         self.__cdts = list()
 
         self.reconnect = kwargs.get('reconnect', self.__DEFAULT_RECONNECT)
+
+    def __str__(self):
+        return str({
+            'protocol': self.__PROTOCOL,
+            'ip_address': (self.__ipaddr[0] + ':' + str(self.__ipaddr[1])),
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
+
+    def __repr__(self):
+        return repr({
+            'protocol': self.__PROTOCOL,
+            'ip_address': self.__ipaddr,
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
 
     @property
     def reconnect(self):
@@ -163,6 +184,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
     __DEFAULT_REBIND = 5.0
+    __PROTOCOL = 'SECS-I-on-TCP/IP-Receiver'
 
     def __init__(self, ip_address, port, device_id, is_equip, is_master, **kwargs):
         super(Secs1OnTcpIpReceiverCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
@@ -173,6 +195,26 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
         self.__cdts = list()
 
         self.rebind = kwargs.get('rebind', self.__DEFAULT_REBIND)
+
+    def __str__(self):
+        return str({
+            'protocol': self.__PROTOCOL,
+            'ip_address': (self.__ipaddr[0] + ':' + str(self.__ipaddr[1])),
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
+
+    def __repr__(self):
+        return repr({
+            'protocol': self.__PROTOCOL,
+            'ip_address': self.__ipaddr,
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
 
     @property
     def rebind(self):
