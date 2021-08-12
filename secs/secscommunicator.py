@@ -52,8 +52,8 @@ class AbstractQueuing:
         self._v_lock = threading.Lock()
         self._v_cdt = threading.Condition()
         self._vv = list()
-        self._shutdowned = False
-        self._shutdown_lock = threading.Lock()
+        self.__terminated = False
+        self.__terminated_lock = threading.Lock()
 
     def __enter__(self):
         return self
@@ -62,23 +62,37 @@ class AbstractQueuing:
         self.shutdown()
 
     def shutdown(self):
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return
-            self._shutdowned = True
+        with self.__terminated_lock:
+            self.__terminated = True
+            with self._v_cdt:
+                self._v_cdt.notify_all()
+    
+    def _is_terminated(self):
+        with self.__terminated_lock:
+            return self.__terminated
+    
+    def await_termination(self, timeout=None):
 
-        with self._v_cdt:
-            self._v_cdt.notify_all()
+        if self._is_terminated():
+            return True
+        
+        while True:
+            with self._v_cdt:
+                self._v_cdt.wait(timeout)
+            
+            f = self._is_terminated()
+            if f or timeout is not None:
+                return f
 
     def put(self, value):
-        if value is not None:
+        if value is not None and not self._is_terminated():
             with self._v_lock:
                 self._vv.append(value)
                 with self._v_cdt:
                     self._v_cdt.notify_all()
 
     def puts(self, values):
-        if values:
+        if values and not self._is_terminated():
             with self._v_lock:
                 self._vv.extend([v for v in values])
                 with self._v_cdt:
@@ -104,10 +118,11 @@ class CallbackQueuing(AbstractQueuing):
                 if v is None:
                     with self._v_cdt:
                         self._v_cdt.wait()
-                        with self._shutdown_lock:
-                            if self._shutdowned:
-                                self._func(None)
-                                return
+                    
+                    if self._is_terminated():
+                        self._func(None)
+                        return
+
                 else:
                     self._func(v)
 
@@ -121,19 +136,18 @@ class WaitingQueuing(AbstractQueuing):
 
     def poll(self, timeout=None):
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return None
+        if self._is_terminated():
+            return None
 
+        v = self._poll_vv()
+        if v is not None:
+            return v
+        
         with self._v_cdt:
-            v = self._poll_vv()
-            if v is not None:
-                return v
             self._v_cdt.wait(timeout)
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return None
+        if self._is_terminated():
+            return None
 
         return self._poll_vv()
 
@@ -155,19 +169,18 @@ class WaitingQueuing(AbstractQueuing):
                 else:
                     return -1
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return -1
+        if self._is_terminated():
+            return -1
 
+        rr = _f(values, pos, size)
+        if rr > 0:
+            return rr
+        
         with self._v_cdt:
-            rr = _f(values, pos, size)
-            if rr > 0:
-                return rr
             self._v_cdt.wait(timeout)
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return -1
+        if self._is_terminated():
+            return -1
 
         return _f(values, pos, size)
 

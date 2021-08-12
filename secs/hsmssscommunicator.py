@@ -1,5 +1,4 @@
 import threading
-import concurrent.futures
 import socket
 import secs
 
@@ -47,6 +46,86 @@ class HsmsSsCommunicateState:
     SELECTED = 'selected'
 
 
+class SendReplyHsmsSsMessagePack:
+
+    def __init__(self, msg):
+        self.__msg = msg
+        self.__reply_msg_lock = threading.Lock()
+        self.__reply_msg_cdt = threading.Condition()
+        self.__reply_msg = None
+        self.__terminated = False
+        self.__terminated_lock = threading.Lock()
+    
+    def shutdown(self):
+        with self.__terminated_lock:
+            self.__terminated = True
+            with self.__reply_msg_cdt:
+                self.__reply_msg_cdt.notify_all()
+    
+    def __is_terminated(self):
+        with self.__terminated_lock:
+            return self.__terminated
+
+    def get_system_bytes(self):
+        return self.__msg.get_system_bytes()
+
+    def put_reply_msg(self, reply_msg):
+        with self.__reply_msg_lock:
+            self.__reply_msg = reply_msg
+            with self.__reply_msg_cdt:
+                self.__reply_msg_cdt.notify_all()
+
+    def wait_reply_msg(self, timeout):
+
+        if self.__is_terminated():
+            return None
+
+        with self.__reply_msg_lock:
+            if self.__reply_msg is not None:
+                return self.__reply_msg
+
+        with self.__reply_msg_cdt:
+            self.__reply_msg_cdt.wait(timeout)
+        
+        with self.__reply_msg_lock:
+            return self.__reply_msg
+
+
+class SendReplyHsmsSsMessagePackPool:
+
+    def __init__(self):
+        self.__pool = dict()
+        self.__lock = threading.Lock()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.shutdown()
+    
+    def shutdown(self):
+        with self.__lock:
+            for pack in self.__pool.values():
+                pack.shutdown()
+
+    def entry(self, pack):
+        with self.__lock:
+            self.__pool[pack.get_system_bytes()] = pack
+
+    def remove(self, pack):
+        with self.__lock:
+            del self.__pool[pack.get_system_bytes()]
+
+    def put_reply_msg(self, reply_msg):
+        with self.__lock:
+            key = reply_msg.get_system_bytes()
+            if key in self.__pool:
+                self.__pool[key].put_reply_msg(reply_msg)
+                return True
+            else:
+                return False
+
+
 class HsmsSsConnection:
     
     def __init__(
@@ -63,214 +142,176 @@ class HsmsSsConnection:
         self.__put_sended_msg = sended_msg_put_callback
         self.__put_error = error_put_callback
 
-        self.__close_rlock = threading.RLock()
-        self.__closed = False
+        self.__terminated_lock = threading.Lock()
+        self.__terminated_cdt = threading.Condition()
+        self.__terminated = False
 
-    def open(self):
+        self.__bbqq = secs.WaitingQueuing()
 
-        # TODO
+        self.__send_reply_pool = SendReplyHsmsSsMessagePackPool()
 
-        pass
+        self.__send_lock = threading.Lock()
 
-    def close(self):
-        with self.__close_rlock:
-            if self.__closed:
-                return
-            self._set_closed()
-
-        # TODO
-
-
-    def _is_closed(self):
-        with self.__close_rlock:
-            return self.__closed
-    
-    def _set_closed(self):
-        with self.__close_rlock:
-            self.__closed = True
-
-    def send(self, msg):
-        # TODO
-        pass
-
-
-class HsmsSsConnection2:
-    
-    def __init__(self, sock, parent, recv_primary_msg_callback):
-        self._sock = sock
-        self._parent = parent
-        self._rpm_cb = recv_primary_msg_callback
-
-        self._tpe = concurrent.futures.ThreadPoolExecutor(max_workers=32)
-        self._closed = False
-
-        self._rsp_pool = dict()
-        self._rsp_pool_lock = threading.Lock()
-        self._rsp_pool_cdt = threading.Condition()
-
-        self._send_lock = threading.Lock()
-
-        self._recv_all_msg_putter = secs.CallbackQueuing(parent._put_recv_all_msg)
-        self._sended_msg_putter = secs.CallbackQueuing(parent._put_sended_msg)
+        threading.Thread(target=self.__receiving_socket_bytes, daemon=True).start()
+        threading.Thread(target=self.__reading_msg, daemon=True).start()
     
     def __enter__(self):
-        self.open()
         return self
-    
+
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        self.shutdown()
+
+    def shutdown(self):
+        with self.__terminated_lock:
+
+            if not self.__terminated:
+                return
+
+            self.__terminated = True
+
+            self.__bbqq.shutdown()
+            self.__send_reply_pool.shutdown()
+
+            with self.__terminated_cdt:
+                self.__terminated_cdt.notify_all()
+
+    def __is_terminated(self):
+        with self.__terminated_lock:
+            return self.__terminated
     
-    def open(self):
+    def await_termination(self, timeout=None):
 
-        def _f():
+        if self.__is_terminated():
+            return True
+        
+        while True:
+            with self.__terminated_cdt:
+                self.__terminated_cdt.wait(timeout)
 
-            with secs.CallbackQueuing(self._rpm_cb) as pmq, \
-                    secs.WaitingQueuing() as llq:
+            f = self.__is_terminated()
+            if f or timeout is not None:
+                return f
 
-                def _recv_bytes():
+    def __receiving_socket_bytes(self):
+        try:
+            while not self.__is_terminated():
+                bs = self.__sock.recv(4096)
+                if bs:
+                    self.__bbqq.puts(bs)
+                else:
+                    raise HsmsSsCommunicatorError("Terminate detect")
 
-                    while not self._closed:
+        except Exception as e:
+            if not self.__is_terminated():
+                self.__put_error(HsmsSsCommunicatorError(e))
+        
+        finally:
+            self.shutdown()
 
-                        try:
+    def __reading_msg(self):
+        try:
+            while not self.__is_terminated():
 
-                            heads = list()
-                            pos = 0
-                            size = 14
+                heads = list()
+                pos = 0
+                size = 14
 
-                            r = llq.put_to_list(heads, pos, size)
-                            if r < 0:
-                                return None
+                r = self.__bbqq.put_to_list(heads, pos, size)
+                if r < 0:
+                    return
 
-                            pos += r
+                pos += r
 
-                            while pos < size:
-                                r = llq.put_to_list(heads, pos, size, self._parent.timeout_t8)
-                                if r < 0:
-                                    raise HsmsSsCommunicatorError("T8-Timeout")
-                                else:
-                                    pos += r
+                while pos < size:
+                    r = self.__bbqq.put_to_list(
+                        heads, pos, size,
+                        self.__comm.timeout_t8)
+                    
+                    if r < 0:
+                        raise HsmsSsCommunicatorError("T8-Timeout")
+                    else:
+                        pos += r
 
-                            bodys = list()
-                            pos = 0
-                            size = (heads[0] << 24
-                                    | heads[1] << 16
-                                    | heads[2] << 8
-                                    | heads[3]) - 10
+                bodys = list()
+                pos = 0
+                size = (heads[0] << 24
+                        | heads[1] << 16
+                        | heads[2] << 8
+                        | heads[3]) - 10
 
-                            while pos < size:
-                                r = llq.put_to_list(bodys, pos, size, self._parent.timeout_t8)
-                                if r < 0:
-                                    raise HsmsSsCommunicatorError("T8-Timeout")
-                                else:
-                                    pos += r
+                while pos < size:
+                    r = self.__bbqq.put_to_list(
+                        bodys, pos, size,
+                        self.__comm.timeout_t8)
+                    
+                    if r < 0:
+                        raise HsmsSsCommunicatorError("T8-Timeout")
+                    else:
+                        pos += r
 
-                            msg = secs.HsmsSsMessage.from_bytes(bytes(heads) + bytes(bodys))
-                            key = msg.get_system_bytes()
+                msg = secs.HsmsSsMessage.from_bytes(bytes(heads) + bytes(bodys))
 
-                            self._recv_all_msg_putter.put(msg)
+                self.__put_recv_all_msg(msg)
 
-                            with self._rsp_pool_lock:
-                                if key in self._rsp_pool:
-                                    self._rsp_pool[key] = msg
-                                    with self._rsp_pool_cdt:
-                                        self._rsp_pool_cdt.notify_all()
-                                else:
-                                    pmq.put(msg)
+                if not self.__send_reply_pool.put_reply_msg(msg):
+                    self.__put_recv_primary_msg(msg, self)
 
-                        except HsmsSsCommunicatorError as e:
-                            self._parent._put_error(e)
+        except Exception as e:
+            if not self.__is_terminated():
+                self.__put_error(e)
 
-                self._tpe.submit(_recv_bytes)
-
-                try :
-                    while not self._closed:
-                        bs = self._sock.recv(4096)
-                        if bs:
-                            llq.puts(bs)
-                        else:
-                            self._parent._put_error(HsmsSsCommunicatorError("Terminate detect"))
-                            break
-
-                except Exception as e:
-                    if not self._closed:
-                        self._parent._put_error(HsmsSsCommunicatorError(e))
-
-        self._tpe.submit(_f)
-
-    def close(self):
-        self._closed = True
-
-        self._sended_msg_putter.close()
-        self._recv_all_msg_putter.close()
-
-        with self._rsp_pool_cdt:
-            self._rsp_pool_cdt.notify_all()
-
-        self._tpe.shutdown(wait=True, cancel_futures=True)
+        finally:
+            self.shutdown()
 
     def send(self, msg):
 
         timeout_tx = -1.0
 
         ctrl_type = msg.get_control_type()
+
         if ctrl_type == secs.HsmsSsControlType.DATA:
-            if msg.has_wbit():
-                timeout_tx = self._parent.timeout_t3
+            if msg.wbit:
+                timeout_tx = self.__comm.timeout_t3
+
         elif (ctrl_type == secs.HsmsSsControlType.SELECT_REQ
             or ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ):
-            timeout_tx = self._parent.timeout_t6
+            timeout_tx = self.__comm.timeout_t6
 
         def _send(msg):
-            with self._send_lock:
+            with self.__send_lock:
                 try:
-                    self._sock.sendall(msg.to_bytes())
-                    self._sended_msg_putter.put(msg)
+                    self.__sock.sendall(msg.to_bytes())
+                    self.__put_sended_msg(msg)
                 except Exception as e:
                     raise HsmsSsSendMessageError(e, msg)
+        
+        if timeout_tx >= 0.0:
 
-        if timeout_tx > 0.0:
-
-            key = msg.get_system_bytes()
+            pack = SendReplyHsmsSsMessagePack(msg)
 
             try:
-                with self._rsp_pool_lock:
-                    self._rsp_pool[key] = None
+                self.__send_reply_pool.entry(pack)
 
                 _send(msg)
 
-                def _f():
-                    while True:
-                        with self._rsp_pool_lock:
-                            if key in self._rsp_pool:
-                                rsp = self._rsp_pool[key]
-                                if rsp is not None:
-                                    return rsp
-                            else:
-                                return None
-                        with self._rsp_pool_cdt:
-                            self._rsp_pool_cdt.wait()
+                rsp = pack.wait_reply_msg(timeout_tx)
 
-                f = self._tpe.submit(_f)
+                if rsp is None:
+                    if self.__is_terminated():
+                        raise HsmsSsCommunicatorError("HsmsSsConnection terminated")
 
-                try:
-                    r = f.result(timeout_tx)
-
-                    if r.get_control_type() == secs.HsmsSsControlType.REJECT_REQ:
-                        raise HsmsSsRejectMessageError(msg)
-
-                    return r
-
-                except concurrent.futures.TimeoutError as e:
-
-                    if ctrl_type == secs.HsmsSsControlType.DATA:
-                        raise HsmsSsTimeoutT3Error(e, msg)
                     else:
-                        raise HsmsSsTimeoutT6Error(e, msg)
+                        if ctrl_type == secs.HsmsSsControlType.DATA:
+                            raise HsmsSsTimeoutT3Error("HsmsSs-Timeout-T3", msg)
+                        else:
+                            raise HsmsSsTimeoutT6Error("HsmsSs-Timeout-T6", msg)
+
+                else:
+                    return rsp
 
             finally:
-                with self._rsp_pool_lock:
-                    del self._rsp_pool[key]
-
+                self.__send_reply_pool.remove(pack)
+            
         else:
             _send(msg)
             return None
@@ -373,7 +414,7 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         self.__error_putter.shutdown()
     
     def _build_hsmsss_connection(self, sock, recv_primary_msg_callback):
-        return HsmsSsConnection2(
+        return HsmsSsConnection(
             sock,
             self,
             recv_primary_msg_callback,

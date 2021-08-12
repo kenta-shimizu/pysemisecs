@@ -42,7 +42,7 @@ class MsgAndRecvBytesWaitingQueuing(secs.WaitingQueuing):
         self.puts(bs)
 
     def entry_msg(self, msg):
-        if msg:
+        if msg is not None and not self._is_terminated():
             with self._v_lock:
                 self.__msg_queue.append(msg)
                 with self._v_cdt:
@@ -50,24 +50,22 @@ class MsgAndRecvBytesWaitingQueuing(secs.WaitingQueuing):
 
     def poll_either(self, timeout=None):
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return None, None
+        if self._is_terminated():
+            return None, None
 
         with self._v_lock:
             if self.__msg_queue:
                 return self.__msg_queue.pop(0), None
 
-        with self._v_cdt:
-            v = self._poll_vv()
-            if v is not None:
-                return None, v
+        v = self._poll_vv()
+        if v is not None:
+            return None, v
 
+        with self._v_cdt:
             self._v_cdt.wait(timeout)
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return None, None
+        if self._is_terminated():
+            return None, None
 
         with self._v_lock:
             if self.__msg_queue:
@@ -77,9 +75,8 @@ class MsgAndRecvBytesWaitingQueuing(secs.WaitingQueuing):
 
     def recv_bytes_garbage(self, timeout):
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return
+        if self._is_terminated():
+            return
 
         with self._v_lock:
             del self._vv[:]
@@ -118,14 +115,14 @@ class SendSecs1MessagePack:
         return self.present_block().ebit
 
     def wait_until_sended(self, timeout=None):
-        with self.__cdt:
-            while True:
-                with self.__lock:
-                    if self.__sended:
-                        return
-                    elif self.__except is not None:
-                        raise self.__except
+        while True:
+            with self.__lock:
+                if self.__sended:
+                    return
+                elif self.__except is not None:
+                    raise self.__except
 
+            with self.__cdt:
                 self.__cdt.wait(timeout)
 
     def notify_sended(self):
@@ -145,16 +142,16 @@ class SendSecs1MessagePack:
         with self.__lock:
             self.__timer_resetted = True
 
-        with self.__cdt:
-            while True:
-                with self.__lock:
-                    if self.__reply_msg is not None:
-                        return self.__reply_msg
-                    elif self.__timer_resetted:
-                        self.__timer_resetted = False
-                    else:
-                        return None
+        while True:
+            with self.__lock:
+                if self.__reply_msg is not None:
+                    return self.__reply_msg
+                elif self.__timer_resetted:
+                    self.__timer_resetted = False
+                else:
+                    return None
 
+            with self.__cdt:
                 self.__cdt.wait(timeout)
 
     def notify_reply_msg(self, msg):
@@ -479,12 +476,10 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                                     'count': count
                                 })
 
-                                break
-
                 pack.notify_except(Secs1RetryOverError(
                     "Send-Message Retry-Over",
                     pack.secs1msg()))
-
+                    
             except Secs1SendMessageError as e:
                 if not self.is_closed:
                     pack.notify_except(e)

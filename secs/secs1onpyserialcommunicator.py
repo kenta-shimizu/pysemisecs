@@ -109,7 +109,6 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
 
                         try:
                             ser = serial.Serial(
-                                port=self.__port,
                                 baudrate=self.__baudrate,
                                 bytesize=serial.EIGHTBITS,
                                 parity=serial.PARITY_NONE,
@@ -117,6 +116,7 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
                             )
 
                             try:
+                                ser.port = self.__port
                                 ser.open()
 
                                 def _ff():

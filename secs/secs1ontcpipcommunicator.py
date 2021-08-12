@@ -167,7 +167,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
     def _close(self):
 
         if self.is_closed:
-            return;
+            return
 
         super()._close()
 

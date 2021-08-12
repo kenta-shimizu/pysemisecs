@@ -11,11 +11,10 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
         super(HsmsSsPassiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
         
-        self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
         self.__ipaddr = (ip_address, port)
 
-        self.__waiting_cdts = list()
-        self.__open_close_local_lock = threading.Lock()
+        self.__cdts = list()
+        self.__ths = list()
 
     def _get_protocol(self):
         return self.__PROTOCOL
@@ -32,6 +31,15 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 raise RuntimeError("Already opened")
             self._set_opened()
 
+            # TODO
+            # something
+
+            super()._open()
+
+            self._set_opened()
+
+
+    def _open2(self):
         def _open_server():
 
             try:
@@ -223,13 +231,16 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
     def _close(self):
 
-        with self.__open_close_local_lock:
-            if self.is_closed:
-                return
-            self._set_closed()
+        if self.is_closed:
+            return
 
-        for cdt in self.__waiting_cdts:
+        super()._close()
+
+        self._set_closed()
+
+        for cdt in self.__cdts:
             with cdt:
                 cdt.notify_all()
 
-        self.__tpe.shutdown(wait=True, cancel_futures=True)
+        for th in self.__ths:
+            th.join(0.1)
