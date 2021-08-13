@@ -1,4 +1,3 @@
-import concurrent.futures
 import threading
 import socket
 import secs
@@ -7,6 +6,7 @@ import secs
 class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
     __PROTOCOL = 'HSMS-SS-PASSIVE'
+    __TIMEOUT_REBIND = 5.0
 
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
         super(HsmsSsPassiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
@@ -16,68 +16,116 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
         self.__cdts = list()
         self.__ths = list()
 
+        self.timeout_rebind = kwargs.get('timeout_rebind', self.__TIMEOUT_REBIND)
+
     def _get_protocol(self):
         return self.__PROTOCOL
 
     def _get_ipaddress(self):
         return self.__ipaddr
+    
+    @property
+    def timeout_rebind(self):
+        pass
+
+    @timeout_rebind.setter
+    def timeout_rebind(self, val):
+        self.__timeout_rebind = float(val)
+    
+    @timeout_rebind.getter
+    def timeout_rebind(self):
+        return self.__timeout_rebind
 
     def _open(self):
 
-        with self.__open_close_local_lock:
+        with self._open_close_rlock:
             if self.is_closed:
                 raise RuntimeError("Already closed")
             if self.is_open:
                 raise RuntimeError("Already opened")
-            self._set_opened()
 
-            # TODO
-            # something
+            th = threading.Thread(target=self.__loop, daemon=True)
+            self.__ths.append(th)
+            th.start()
 
             super()._open()
 
             self._set_opened()
+    
+    def __loop(self):
+        cdt = threading.Condition()
+        try:
+            self.__cdts.append(cdt)
+            while not self.is_closed:
+                self.__open_server()
+                if self.is_closed:
+                    return
+                with cdt:
+                    cdt.wait(self.timeout_rebind)
+        finally:
+            self.__cdts.remove(cdt)
+    
+    def __open_server(self):
+        cdt = threading.Condition()
+        try:
+            self.__cdts.append(cdt)
 
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
 
-    def _open2(self):
-        def _open_server():
+                server.bind(self._get_ipaddress())
+                server.listen()
 
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+                def _f():
+                    try:
+                        while not self.is_closed:
+                            sock = (server.accept())[0]
+                            self.__accept_socket(sock)
 
-                    server.bind(self._get_ipaddress())
-                    server.listen()
-                    
-                    cdt = threading.Condition()
+                    except Exception as e:
+                        if not self.is_closed:
+                            self._put_error(secs.HsmsSsCommunicatorError(e))
+                    finally:
+                        with cdt:
+                            cdt.notify_all()
+                
+                th = threading.Thread(target=_f, daemon=True)
 
-                    def _f():
-                        try:
-                            while not self.is_closed:
+                try:
+                    self.__ths.append(th)
+                    th.start()
 
-                                sock = (server.accept())[0]
-
-                                def _ff():
-                                    self._accept_socket(sock)
-                                
-                                self.__tpe.submit(_ff)
-
-                        except Exception as e:
-                            if self.is_open:
-                                self._put_error(secs.HsmsSsCommunicatorError(e))
-
-                    self.__tpe.submit(_f)
-                    
-                    self.__waiting_cdts.append(cdt)
                     with cdt:
                         cdt.wait()
 
-            except Exception as e:
-                if self.is_open:
-                    self._put_error(secs.HsmsSsCommunicatorError(e))
-                    
-        self.__tpe.submit(_open_server)
+                finally:
+                    self.__ths.remove(th)
 
-    def _accept_socket(self, sock):
+        except Exception as e:
+            if not self.is_closed:
+                self._put_error(secs.HsmsSsCommunicatorError(e))
+        
+        finally:
+            self.__cdts.remove(cdt)
+    
+    def __accept_socket(self, sock):
+        
+        def _f():
+            with sock:
+                try:
+                    # TODO
+                    
+                    pass
+
+                finally:
+                    try:
+                        sock.shutdown(socket.SHUT_RDWR)
+                    except Exception:
+                        pass
+
+        threading.Thread(target=_f, daemon=True).start()
+    
+
+    def _accept_socket2(self, sock):
 
         with secs.CallbackQueuing(self._put_recv_primary_msg) as pq, \
                 secs.WaitingQueuing() as wq, \
@@ -228,6 +276,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 sock.close()
 
             return None
+
 
     def _close(self):
 

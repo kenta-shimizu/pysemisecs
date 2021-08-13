@@ -297,17 +297,28 @@ class HsmsSsConnection:
                 rsp = pack.wait_reply_msg(timeout_tx)
 
                 if rsp is None:
-                    if self.__is_terminated():
-                        raise HsmsSsCommunicatorError("HsmsSsConnection terminated")
 
+                    if self.__is_terminated():
+
+                        raise HsmsSsCommunicatorError("HsmsSsConnection terminated")
+                    
                     else:
+
                         if ctrl_type == secs.HsmsSsControlType.DATA:
+
                             raise HsmsSsTimeoutT3Error("HsmsSs-Timeout-T3", msg)
+
                         else:
                             raise HsmsSsTimeoutT6Error("HsmsSs-Timeout-T6", msg)
 
                 else:
-                    return rsp
+
+                    if rsp.get_control_type() == secs.HsmsSsControlType.REJECT_REQ:
+
+                        raise HsmsSsRejectMessageError("HsmsSs-Reject-Message", msg)
+
+                    else:
+                        return rsp
 
             finally:
                 self.__send_reply_pool.remove(pack)
@@ -449,6 +460,7 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
                     raise HsmsSsSendMessageError("HsmsSsCommunicator not connected", msg)
                 else:
                     return self._hsmsss_connection
+        
         return _f().send(msg)
 
     def build_select_req(self):
