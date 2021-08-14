@@ -136,7 +136,7 @@ This library is SEMI-SECS-communicate implementation on Python3.
     secs1r.open()
 ```
 
-  Notes: To shutdown, must `.close()` or use a `with` statement.
+  Notes: To shutdown communicator, `.close()` or use a `with` statement.
 
 ## Send Primary-Message and receive Reply-Message
 

@@ -1,11 +1,10 @@
-import concurrent.futures
-import threading
-import struct
-import datetime
-import os
+import importlib
 import socket
 import re
-import importlib
+import os
+import datetime
+import threading
+import struct
 
 
 class Secs2BodyParseError(Exception):
@@ -844,7 +843,7 @@ class HsmsSsControlType:
     REJECT_REQ = (0x00, 0x07)
     SEPARATE_REQ = (0x00, 0x09)
 
-    _ITEMS = (
+    __ITEMS = (
         DATA,
         SELECT_REQ, SELECT_RSP,
         DESELECT_REQ, DESELECT_RSP,
@@ -855,14 +854,14 @@ class HsmsSsControlType:
 
     @classmethod
     def get(cls, v):
-        for x in cls._ITEMS:
+        for x in cls.__ITEMS:
             if x[0] == v[0] and x[1] == v[1]:
                 return x
         return cls.UNDEFINED
 
     @classmethod
     def has_s_type(cls, b):
-        for x in cls._ITEMS:
+        for x in cls.__ITEMS:
             if x[1] == b:
                 return True
         return False
@@ -877,7 +876,7 @@ class HsmsSsSelectStatus():
     NOT_READY = 0x02
     ALREADY_USED = 0x03
 
-    _ITEMS = (
+    __ITEMS = (
         SUCCESS,
         ACTIVED,
         NOT_READY,
@@ -886,7 +885,7 @@ class HsmsSsSelectStatus():
 
     @classmethod
     def get(cls, b):
-        for x in cls._ITEMS:
+        for x in cls.__ITEMS:
             if x == b:
                 return x
         return cls.UNKNOWN
@@ -901,7 +900,7 @@ class HsmsSsRejectReason():
     TRANSACTION_NOT_OPEN = 0x03
     NOT_SELECTED = 0x04
 
-    _ITEMS = (
+    __ITEMS = (
         NOT_SUPPORT_TYPE_S,
         NOT_SUPPORT_TYPE_P,
         TRANSACTION_NOT_OPEN,
@@ -910,7 +909,7 @@ class HsmsSsRejectReason():
 
     @classmethod
     def get(cls, b):
-        for x in cls._ITEMS:
+        for x in cls.__ITEMS:
             if x == b:
                 return x
         return cls.UNKNOWN
@@ -1502,8 +1501,8 @@ class AbstractQueuing:
         self._v_lock = threading.Lock()
         self._v_cdt = threading.Condition()
         self._vv = list()
-        self._shutdowned = False
-        self._shutdown_lock = threading.Lock()
+        self.__terminated = False
+        self.__terminated_lock = threading.Lock()
 
     def __enter__(self):
         return self
@@ -1512,23 +1511,37 @@ class AbstractQueuing:
         self.shutdown()
 
     def shutdown(self):
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return
-            self._shutdowned = True
+        with self.__terminated_lock:
+            self.__terminated = True
+            with self._v_cdt:
+                self._v_cdt.notify_all()
 
-        with self._v_cdt:
-            self._v_cdt.notify_all()
+    def _is_terminated(self):
+        with self.__terminated_lock:
+            return self.__terminated
+
+    def await_termination(self, timeout=None):
+
+        if self._is_terminated():
+            return True
+
+        while True:
+            with self._v_cdt:
+                self._v_cdt.wait(timeout)
+
+            f = self._is_terminated()
+            if f or timeout is not None:
+                return f
 
     def put(self, value):
-        if value is not None:
+        if value is not None and not self._is_terminated():
             with self._v_lock:
                 self._vv.append(value)
                 with self._v_cdt:
                     self._v_cdt.notify_all()
 
     def puts(self, values):
-        if values:
+        if values and not self._is_terminated():
             with self._v_lock:
                 self._vv.extend([v for v in values])
                 with self._v_cdt:
@@ -1554,10 +1567,11 @@ class CallbackQueuing(AbstractQueuing):
                 if v is None:
                     with self._v_cdt:
                         self._v_cdt.wait()
-                        with self._shutdown_lock:
-                            if self._shutdowned:
-                                self._func(None)
-                                return
+
+                    if self._is_terminated():
+                        self._func(None)
+                        return
+
                 else:
                     self._func(v)
 
@@ -1571,19 +1585,18 @@ class WaitingQueuing(AbstractQueuing):
 
     def poll(self, timeout=None):
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return None
+        if self._is_terminated():
+            return None
+
+        v = self._poll_vv()
+        if v is not None:
+            return v
 
         with self._v_cdt:
-            v = self._poll_vv()
-            if v is not None:
-                return v
             self._v_cdt.wait(timeout)
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return None
+        if self._is_terminated():
+            return None
 
         return self._poll_vv()
 
@@ -1605,19 +1618,18 @@ class WaitingQueuing(AbstractQueuing):
                 else:
                     return -1
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return -1
+        if self._is_terminated():
+            return -1
+
+        rr = _f(values, pos, size)
+        if rr > 0:
+            return rr
 
         with self._v_cdt:
-            rr = _f(values, pos, size)
-            if rr > 0:
-                return rr
             self._v_cdt.wait(timeout)
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return -1
+        if self._is_terminated():
+            return -1
 
         return _f(values, pos, size)
 
@@ -2337,182 +2349,283 @@ class HsmsSsCommunicateState:
     SELECTED = 'selected'
 
 
-class HsmsSsConnection:
+class SendReplyHsmsSsMessagePack:
 
-    def __init__(self, sock, parent, recv_primary_msg_callback):
-        self._sock = sock
-        self._parent = parent
-        self._rpm_cb = recv_primary_msg_callback
+    def __init__(self, msg):
+        self.__msg = msg
+        self.__reply_msg_lock = threading.Lock()
+        self.__reply_msg_cdt = threading.Condition()
+        self.__reply_msg = None
+        self.__terminated = False
+        self.__terminated_lock = threading.Lock()
 
-        self._tpe = concurrent.futures.ThreadPoolExecutor(max_workers=32)
-        self._closed = False
+    def shutdown(self):
+        with self.__terminated_lock:
+            self.__terminated = True
+            with self.__reply_msg_cdt:
+                self.__reply_msg_cdt.notify_all()
 
-        self._rsp_pool = dict()
-        self._rsp_pool_lock = threading.Lock()
-        self._rsp_pool_cdt = threading.Condition()
+    def __is_terminated(self):
+        with self.__terminated_lock:
+            return self.__terminated
 
-        self._send_lock = threading.Lock()
+    def get_system_bytes(self):
+        return self.__msg.get_system_bytes()
 
-        self._recv_all_msg_putter = CallbackQueuing(parent._put_recv_all_msg)
-        self._sended_msg_putter = CallbackQueuing(parent._put_sended_msg)
+    def put_reply_msg(self, reply_msg):
+        with self.__reply_msg_lock:
+            self.__reply_msg = reply_msg
+            with self.__reply_msg_cdt:
+                self.__reply_msg_cdt.notify_all()
+
+    def wait_reply_msg(self, timeout):
+
+        if self.__is_terminated():
+            return None
+
+        with self.__reply_msg_lock:
+            if self.__reply_msg is not None:
+                return self.__reply_msg
+
+        with self.__reply_msg_cdt:
+            self.__reply_msg_cdt.wait(timeout)
+
+        with self.__reply_msg_lock:
+            return self.__reply_msg
+
+
+class SendReplyHsmsSsMessagePackPool:
+
+    def __init__(self):
+        self.__pool = dict()
+        self.__lock = threading.Lock()
 
     def __enter__(self):
-        self.open()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        self.shutdown()
 
-    def open(self):
+    def shutdown(self):
+        with self.__lock:
+            for pack in self.__pool.values():
+                pack.shutdown()
 
-        def _f():
+    def entry(self, pack):
+        with self.__lock:
+            self.__pool[pack.get_system_bytes()] = pack
 
-            with CallbackQueuing(self._rpm_cb) as pmq, \
-                    WaitingQueuing() as llq:
+    def remove(self, pack):
+        with self.__lock:
+            del self.__pool[pack.get_system_bytes()]
 
-                def _recv_bytes():
+    def put_reply_msg(self, reply_msg):
+        with self.__lock:
+            key = reply_msg.get_system_bytes()
+            if key in self.__pool:
+                self.__pool[key].put_reply_msg(reply_msg)
+                return True
+            else:
+                return False
 
-                    while not self._closed:
 
-                        try:
+class HsmsSsConnection:
 
-                            heads = list()
-                            pos = 0
-                            size = 14
+    def __init__(
+        self, sock, comm,
+        recv_primary_msg_put_callback,
+        recv_all_msg_put_callback,
+        sended_msg_put_callback,
+        error_put_callback):
 
-                            r = llq.put_to_list(heads, pos, size)
-                            if r < 0:
-                                return None
+        self.__sock = sock
+        self.__comm = comm
+        self.__put_recv_primary_msg = recv_primary_msg_put_callback
+        self.__put_recv_all_msg = recv_all_msg_put_callback
+        self.__put_sended_msg = sended_msg_put_callback
+        self.__put_error = error_put_callback
 
-                            pos += r
+        self.__terminated_lock = threading.Lock()
+        self.__terminated_cdt = threading.Condition()
+        self.__terminated = False
 
-                            while pos < size:
-                                r = llq.put_to_list(heads, pos, size, self._parent.timeout_t8)
-                                if r < 0:
-                                    raise HsmsSsCommunicatorError("T8-Timeout")
-                                else:
-                                    pos += r
+        self.__bbqq = WaitingQueuing()
 
-                            bodys = list()
-                            pos = 0
-                            size = (heads[0] << 24
-                                    | heads[1] << 16
-                                    | heads[2] << 8
-                                    | heads[3]) - 10
+        self.__send_reply_pool = SendReplyHsmsSsMessagePackPool()
 
-                            while pos < size:
-                                r = llq.put_to_list(bodys, pos, size, self._parent.timeout_t8)
-                                if r < 0:
-                                    raise HsmsSsCommunicatorError("T8-Timeout")
-                                else:
-                                    pos += r
+        self.__send_lock = threading.Lock()
 
-                            msg = HsmsSsMessage.from_bytes(bytes(heads) + bytes(bodys))
-                            key = msg.get_system_bytes()
+        threading.Thread(target=self.__receiving_socket_bytes, daemon=True).start()
+        threading.Thread(target=self.__reading_msg, daemon=True).start()
 
-                            self._recv_all_msg_putter.put(msg)
+    def __enter__(self):
+        return self
 
-                            with self._rsp_pool_lock:
-                                if key in self._rsp_pool:
-                                    self._rsp_pool[key] = msg
-                                    with self._rsp_pool_cdt:
-                                        self._rsp_pool_cdt.notify_all()
-                                else:
-                                    pmq.put(msg)
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.shutdown()
 
-                        except HsmsSsCommunicatorError as e:
-                            self._parent._put_error(e)
+    def shutdown(self):
+        with self.__terminated_lock:
 
-                self._tpe.submit(_recv_bytes)
+            if not self.__terminated:
+                return
 
-                try :
-                    while not self._closed:
-                        bs = self._sock.recv(4096)
-                        if bs:
-                            llq.puts(bs)
-                        else:
-                            self._parent._put_error(HsmsSsCommunicatorError("Terminate detect"))
-                            break
+            self.__terminated = True
 
-                except Exception as e:
-                    if not self._closed:
-                        self._parent._put_error(HsmsSsCommunicatorError(e))
+            self.__bbqq.shutdown()
+            self.__send_reply_pool.shutdown()
 
-        self._tpe.submit(_f)
+            with self.__terminated_cdt:
+                self.__terminated_cdt.notify_all()
 
-    def close(self):
-        self._closed = True
+    def __is_terminated(self):
+        with self.__terminated_lock:
+            return self.__terminated
 
-        self._sended_msg_putter.close()
-        self._recv_all_msg_putter.close()
+    def await_termination(self, timeout=None):
 
-        with self._rsp_pool_cdt:
-            self._rsp_pool_cdt.notify_all()
+        if self.__is_terminated():
+            return True
 
-        self._tpe.shutdown(wait=True, cancel_futures=True)
+        while True:
+            with self.__terminated_cdt:
+                self.__terminated_cdt.wait(timeout)
+
+            f = self.__is_terminated()
+            if f or timeout is not None:
+                return f
+
+    def __receiving_socket_bytes(self):
+        try:
+            while not self.__is_terminated():
+                bs = self.__sock.recv(4096)
+                if bs:
+                    self.__bbqq.puts(bs)
+                else:
+                    raise HsmsSsCommunicatorError("Terminate detect")
+
+        except Exception as e:
+            if not self.__is_terminated():
+                self.__put_error(HsmsSsCommunicatorError(e))
+
+        finally:
+            self.shutdown()
+
+    def __reading_msg(self):
+        try:
+            while not self.__is_terminated():
+
+                heads = list()
+                pos = 0
+                size = 14
+
+                r = self.__bbqq.put_to_list(heads, pos, size)
+                if r < 0:
+                    return
+
+                pos += r
+
+                while pos < size:
+                    r = self.__bbqq.put_to_list(
+                        heads, pos, size,
+                        self.__comm.timeout_t8)
+
+                    if r < 0:
+                        raise HsmsSsCommunicatorError("T8-Timeout")
+                    else:
+                        pos += r
+
+                bodys = list()
+                pos = 0
+                size = (heads[0] << 24
+                        | heads[1] << 16
+                        | heads[2] << 8
+                        | heads[3]) - 10
+
+                while pos < size:
+                    r = self.__bbqq.put_to_list(
+                        bodys, pos, size,
+                        self.__comm.timeout_t8)
+
+                    if r < 0:
+                        raise HsmsSsCommunicatorError("T8-Timeout")
+                    else:
+                        pos += r
+
+                msg = HsmsSsMessage.from_bytes(bytes(heads) + bytes(bodys))
+
+                self.__put_recv_all_msg(msg)
+
+                if not self.__send_reply_pool.put_reply_msg(msg):
+                    self.__put_recv_primary_msg(msg, self)
+
+        except Exception as e:
+            if not self.__is_terminated():
+                self.__put_error(e)
+
+        finally:
+            self.shutdown()
 
     def send(self, msg):
 
         timeout_tx = -1.0
 
         ctrl_type = msg.get_control_type()
+
         if ctrl_type == HsmsSsControlType.DATA:
-            if msg.has_wbit():
-                timeout_tx = self._parent.timeout_t3
+            if msg.wbit:
+                timeout_tx = self.__comm.timeout_t3
+
         elif (ctrl_type == HsmsSsControlType.SELECT_REQ
             or ctrl_type == HsmsSsControlType.LINKTEST_REQ):
-            timeout_tx = self._parent.timeout_t6
+            timeout_tx = self.__comm.timeout_t6
 
         def _send(msg):
-            with self._send_lock:
+            with self.__send_lock:
                 try:
-                    self._sock.sendall(msg.to_bytes())
-                    self._sended_msg_putter.put(msg)
+                    self.__sock.sendall(msg.to_bytes())
+                    self.__put_sended_msg(msg)
                 except Exception as e:
                     raise HsmsSsSendMessageError(e, msg)
 
-        if timeout_tx > 0.0:
+        if timeout_tx >= 0.0:
 
-            key = msg.get_system_bytes()
+            pack = SendReplyHsmsSsMessagePack(msg)
 
             try:
-                with self._rsp_pool_lock:
-                    self._rsp_pool[key] = None
+                self.__send_reply_pool.entry(pack)
 
                 _send(msg)
 
-                def _f():
-                    while True:
-                        with self._rsp_pool_lock:
-                            if key in self._rsp_pool:
-                                rsp = self._rsp_pool[key]
-                                if rsp is not None:
-                                    return rsp
-                            else:
-                                return None
-                        with self._rsp_pool_cdt:
-                            self._rsp_pool_cdt.wait()
+                rsp = pack.wait_reply_msg(timeout_tx)
 
-                f = self._tpe.submit(_f)
+                if rsp is None:
 
-                try:
-                    r = f.result(timeout_tx)
+                    if self.__is_terminated():
 
-                    if r.get_control_type() == HsmsSsControlType.REJECT_REQ:
-                        raise HsmsSsRejectMessageError(msg)
+                        raise HsmsSsCommunicatorError("HsmsSsConnection terminated")
 
-                    return r
-
-                except concurrent.futures.TimeoutError as e:
-
-                    if ctrl_type == HsmsSsControlType.DATA:
-                        raise HsmsSsTimeoutT3Error(e, msg)
                     else:
-                        raise HsmsSsTimeoutT6Error(e, msg)
+
+                        if ctrl_type == HsmsSsControlType.DATA:
+
+                            raise HsmsSsTimeoutT3Error("HsmsSs-Timeout-T3", msg)
+
+                        else:
+                            self.shutdown()
+                            raise HsmsSsTimeoutT6Error("HsmsSs-Timeout-T6", msg)
+
+                else:
+
+                    if rsp.get_control_type() == HsmsSsControlType.REJECT_REQ:
+
+                        raise HsmsSsRejectMessageError("HsmsSs-Reject-Message", msg)
+
+                    else:
+                        return rsp
 
             finally:
-                with self._rsp_pool_lock:
-                    del self._rsp_pool[key]
+                self.__send_reply_pool.remove(pack)
 
         else:
             _send(msg)
@@ -2523,58 +2636,109 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
 
     def __init__(self, session_id, is_equip, **kwargs):
         super(AbstractHsmsSsCommunicator, self).__init__(session_id, is_equip, **kwargs)
+
         self._hsmsss_connection = None
+        self._hsmsss_connection_lock = threading.Lock()
 
-        self._hsmsss_connection_rlock = threading.RLock()
-
-        self._hsmsss_comm_rlock = threading.RLock()
         self._hsmsss_comm = HsmsSsCommunicateState.NOT_CONNECT
-
+        self._hsmsss_comm_lock = threading.Lock()
         self._hsmsss_comm_lstnrs = list()
+
+        self.__recv_all_msg_putter = CallbackQueuing(self._put_recv_all_msg)
+        self.__sended_msg_putter = CallbackQueuing(self._put_sended_msg)
+        self.__error_putter = CallbackQueuing(super()._put_error)
 
         hsmssscomml = kwargs.get('hsmsss_communicate', None)
         if hsmssscomml is not None:
             self.add_hsmsss_communicate_listener(hsmssscomml)
 
     def __str__(self):
-        ipaddr = self.get_ipaddress()
-        return (
-            'protocol: ' + str(self.get_protocol())
-            + ', ip-address: ' + str(ipaddr[0])
-            + ':' + str(ipaddr[1])
-            + ', session-id: ' + str(self._dev_id)
-            + ', is-equip: ' + str(self._is_equip)
-            + ', communicate-state: ' + self.get_hsmsss_communicate_state()
-            + ', name: ' + self.get_name()
-            )
+        ipaddr = self._get_ipaddress()
+        return str({
+            'protocol': self._get_protocol(),
+            'ip_address': (ipaddr[0]) + ':' + str(ipaddr[1]),
+            'session_id': self.session_id,
+            'is_equip': self.is_equip,
+            'communicate_state': self.get_hsmsss_communicate_state(),
+            'name': self.name
+        })
 
     def __repr__(self):
-        return (
-            '{protocol:' + repr(self.get_protocol())
-            + ',ipaddr:' + repr(self.get_ipaddress())
-            + ',sessionid:' + repr(self._dev_id)
-            + ',isequip:' + repr(self._is_equip)
-            + ',communicatestate:' + repr(self.get_hsmsss_communicate_state())
-            + ',name:' + repr(self.get_name())
-            + '}'
-            )
+        return repr({
+            'protocol': self._get_protocol(),
+            'ip_address': self._get_ipaddress(),
+            'session_id': self.session_id,
+            'is_equip': self.is_equip,
+            'communicate_state': self.get_hsmsss_communicate_state(),
+            'name': self.name
+        })
 
-    def get_protocol(self):
+    def _get_protocol(self):
         # prototype
         raise NotImplementedError()
 
-    def get_ipaddress(self):
+    def _get_ipaddress(self):
         # prototype
         raise NotImplementedError()
+
+    @property
+    def session_id(self):
+        pass
+
+    @session_id.setter
+    def session_id(self, val):
+        """SESSION-ID setter.
+
+        Args:
+            val (int): SESSION_ID
+        """
+        self.device_id = val
+
+    @session_id.getter
+    def session_id(self):
+        """SESSION-ID getter.
+
+        Returns:
+            int: SESSION_ID
+        """
+        return self.device_id
+
+    def _put_error(self, e):
+        self.__error_putter.put(e)
+
+    def _open(self):
+        with self._open_close_rlock:
+            if self.is_closed:
+                raise RuntimeError("Already closed")
+            if self.is_open:
+                raise RuntimeError("Already opened")
+
+        # TODO
+
+        self._set_opened()
 
     def _close(self):
         with self._open_close_rlock:
-            if self.is_closed():
+            if self.is_closed:
                 return
-            self._set_closed()
+
+        self._set_closed()
+
+        self.__recv_all_msg_putter.shutdown()
+        self.__sended_msg_putter.shutdown()
+        self.__error_putter.shutdown()
+
+    def _build_hsmsss_connection(self, sock, recv_primary_msg_callback):
+        return HsmsSsConnection(
+            sock,
+            self,
+            recv_primary_msg_callback,
+            self.__recv_all_msg_putter.put,
+            self.__sended_msg_putter.put,
+            self.__error_putter.put)
 
     def _set_hsmsss_connection(self, conn, callback=None):
-        with self._hsmsss_connection_rlock:
+        with self._hsmsss_connection_lock:
             if self._hsmsss_connection is None:
                 self._hsmsss_connection = conn
                 if callback is not None:
@@ -2584,10 +2748,11 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
                 return False
 
     def _unset_hsmsss_connection(self, callback=None):
-        with self._hsmsss_connection_rlock:
-            self._hsmsss_connection = None
-            if callback is not None:
-                callback()
+        with self._hsmsss_connection_lock:
+            if self._hsmsss_connection is not None:
+                self._hsmsss_connection = None
+                if callback is not None:
+                    callback()
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         return self.send_hsmsss_msg(
@@ -2595,467 +2760,660 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
 
     def send_hsmsss_msg(self, msg):
         def _f():
-            with self._hsmsss_connection_rlock:
+            with self._hsmsss_connection_lock:
                 if self._hsmsss_connection is None:
                     raise HsmsSsSendMessageError("HsmsSsCommunicator not connected", msg)
                 else:
                     return self._hsmsss_connection
+
         return _f().send(msg)
 
     def build_select_req(self):
-        return HsmsSsControlMessage.build_select_request(self._create_system_bytes())
+        return HsmsSsControlMessage.build_select_request(
+            self._create_system_bytes())
+
+    def build_select_rsp(self, primary, status):
+        return HsmsSsControlMessage.build_select_response(
+            primary,
+            status)
+
+    def build_linktest_req(self):
+        return HsmsSsControlMessage.build_linktest_request(
+            self._create_system_bytes())
+
+    def build_linktest_rsp(self, primary):
+        return HsmsSsControlMessage.build_linktest_response(
+            primary)
+
+    def build_reject_req(self, primary, reason):
+        return HsmsSsControlMessage.build_reject_request(
+            primary,
+            reason)
+
+    def build_separate_req(self):
+        return HsmsSsControlMessage.build_separate_request(
+            self._create_system_bytes())
 
     def send_select_req(self):
-        return self.send_hsmsss_msg(self.build_select_req())
+        msg = self.build_select_req()
+        return self.send_hsmsss_msg(msg)
 
     def send_select_rsp(self, primary, status):
-        return self.send_hsmsss_msg(
-            HsmsSsControlMessage.build_select_response(primary, status))
+        msg = self.build_select_rsp(self, primary, status)
+        return self.send_hsmsss_msg(msg)
 
     def send_linktest_req(self):
-        return self.send_hsmsss_msg(
-            HsmsSsControlMessage.build_linktest_request(self._create_system_bytes()))
+        msg = self.build_linktest_req(self)
+        return self.send_hsmsss_msg(msg)
 
     def send_linktest_rsp(self, primary):
-        return self.send_hsmsss_msg(
-            HsmsSsControlMessage.build_linktest_response(primary))
+        msg = self.build_linktest_rsp(primary)
+        return self.send_hsmsss_msg(msg)
 
     def send_reject_req(self, primary, reason):
-        return self.send_hsmsss_msg(
-            HsmsSsControlMessage.build_reject_request(primary, reason))
+        msg = self.build_reject_req(primary, reason)
+        return self.send_hsmsss_msg(msg)
 
     def send_separate_req(self):
-        return self.send_hsmsss_msg(
-            HsmsSsControlMessage.build_separate_request(self._create_system_bytes()))
-
+        msg = self.build_separate_req()
+        return self.send_hsmsss_msg(msg)
 
     def get_hsmsss_communicate_state(self):
-        with self._hsmsss_comm_rlock:
+        with self._hsmsss_comm_lock:
             return self._hsmsss_comm
 
-    def add_hsmsss_communicate_listener(self, l):
-        with self._hsmsss_comm_rlock:
-            self._hsmsss_comm_lstnrs.append(l)
-            l(self._hsmsss_comm, self)
+    def add_hsmsss_communicate_listener(self, listener):
+        with self._hsmsss_comm_lock:
+            self._hsmsss_comm_lstnrs.append(listener)
+            listener(self._hsmsss_comm, self)
 
-    def remove_hsmsss_communicate_listener(self, l):
-        with self._hsmsss_comm_rlock:
-            self._hsmsss_comm_lstnrs.remove(l)
+    def remove_hsmsss_communicate_listener(self, listener):
+        with self._hsmsss_comm_lock:
+            self._hsmsss_comm_lstnrs.remove(listener)
 
     def _put_hsmsss_comm_state(self, state, callback=None):
-        with self._hsmsss_comm_rlock:
+        with self._hsmsss_comm_lock:
             if state != self._hsmsss_comm:
                 self._hsmsss_comm = state
-                for lstnr in self._hsmsss_comm_lstnrs:
-                    lstnr(self._hsmsss_comm, self)
+                for ls in self._hsmsss_comm_lstnrs:
+                    ls(self._hsmsss_comm, self)
                 self._put_communicated(state == HsmsSsCommunicateState.SELECTED)
                 if callback is not None:
                     callback()
 
     def _put_hsmsss_comm_state_to_not_connected(self, callback=None):
-        self._put_hsmsss_comm_state(HsmsSsCommunicateState.NOT_CONNECT, callback)
+        self._put_hsmsss_comm_state(
+            HsmsSsCommunicateState.NOT_CONNECT,
+            callback)
 
     def _put_hsmsss_comm_state_to_connected(self, callback=None):
-        self._put_hsmsss_comm_state(HsmsSsCommunicateState.CONNECTED, callback)
+        self._put_hsmsss_comm_state(
+            HsmsSsCommunicateState.CONNECTED,
+            callback)
 
     def _put_hsmsss_comm_state_to_selected(self, callback=None):
-        self._put_hsmsss_comm_state(HsmsSsCommunicateState.SELECTED, callback)
+        self._put_hsmsss_comm_state(
+            HsmsSsCommunicateState.SELECTED,
+            callback)
 
 
 class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
 
-    __PROTOCOL_NAME = 'HSMS-SS-ACTIVE'
+    __PROTOCOL = 'HSMS-SS-ACTIVE'
 
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
-        """[summary]
-
-        How to
-
-        Args:
-            ip_address ([type]): [description]
-            port ([type]): [description]
-            session_id ([type]): [description]
-            is_equip (bool): [description]
-        """
-
         super(HsmsSsActiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
 
-        self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=8)
         self.__ipaddr = (ip_address, port)
 
-        self.__waiting_cdt = threading.Condition()
-        self.__open_close_local_lock = threading.Lock()
+        self.__circuit_cdt = threading.Condition()
 
-    def get_protocol(self):
-        return self.__PROTOCOL_NAME
+        self.__cdts = list()
+        self.__cdts.append(self.__circuit_cdt)
 
-    def get_ipaddress(self):
+        self.__ths = list()
+
+        self.__recv_primary_msg_putter = CallbackQueuing(self._put_recv_primary_msg)
+
+    def _get_protocol(self):
+        return self.__PROTOCOL
+
+    def _get_ipaddress(self):
         return self.__ipaddr
 
     def _open(self):
 
-        with self.__open_close_local_lock:
+        with self._open_close_rlock:
             if self.is_closed:
                 raise RuntimeError("Already closed")
             if self.is_open:
                 raise RuntimeError("Already opened")
+
+            th = threading.Thread(target=self.__loop, daemon=True)
+            self.__ths.append(th)
+            th.start()
+
+            super()._open()
+
             self._set_opened()
+
+    def __loop(self):
+        cdt = threading.Condition()
+        try:
+            self.__cdts.append(cdt)
+            while not self.is_closed:
+                self.__connect()
+                if self.is_closed:
+                    return
+                with cdt:
+                    cdt.wait(self.timeout_t5)
+        finally:
+            self.__cdts.remove(cdt)
+
+    def __connect(self):
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+
+                sock.connect(self._get_ipaddress())
+
+                with self._build_hsmsss_connection(sock, self.__receiving_msg) as conn:
+
+                    def _f():
+                        conn.await_termination()
+                        with self.__circuit_cdt:
+                            self.__circuit_cdt.notify_all()
+
+                    th = threading.Thread(target=_f, daemon=True)
+
+                    try:
+                        self.__ths.append(th)
+                        th.start()
+
+                        self._put_hsmsss_comm_state_to_connected()
+
+                        rsp = conn.send(self.build_select_req())
+
+                        if rsp is not None:
+
+                            ss = rsp.get_select_status()
+
+                            if (ss == HsmsSsSelectStatus.SUCCESS
+                                or ss == HsmsSsSelectStatus.ACTIVED):
+
+                                self._set_hsmsss_connection(
+                                    conn,
+                                    self._put_hsmsss_comm_state_to_selected)
+
+                                with self.__circuit_cdt:
+                                    self.__circuit_cdt.wait()
+
+                    finally:
+                        self._unset_hsmsss_connection(
+                            self._put_hsmsss_comm_state_to_not_connected)
+
+                        self.__ths.remove(th)
+
+                        try:
+                            sock.shutdown(socket.SHUT_RDWR)
+                        except Exception:
+                            pass
+
+        except ConnectionError as e:
+            self._put_error(HsmsSsCommunicatorError(e))
+        except HsmsSsCommunicatorError as e:
+            self._put_error(e)
+        except HsmsSsSendMessageError as e:
+            self._put_error(e)
+        except HsmsSsWaitReplyMessageError as e:
+            self._put_error(e)
+
+    def __receiving_msg(self, recv_msg, conn):
 
         def _f():
 
-            with CallbackQueuing(self._put_recv_primary_msg) as pq:
+            if recv_msg is None:
+                with self.__circuit_cdt:
+                    self.__circuit_cdt.notify_all()
+                    return
 
-                while self.is_open:
+            ctrl_type = recv_msg.get_control_type()
 
-                    try:
+            try:
+                if ctrl_type == HsmsSsControlType.DATA:
 
-                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    if self.get_hsmsss_communicate_state() == HsmsSsCommunicateState.SELECTED:
 
-                            sock.connect(self.get_ipaddress())
+                        self.__recv_primary_msg_putter.put(recv_msg)
 
-                            def _recv(msg):
+                    else:
+                        conn.send(
+                            self.build_select_rsp(
+                                recv_msg,
+                                HsmsSsRejectReason.NOT_SELECTED))
 
-                                if msg is None:
-                                    with self.__waiting_cdt:
-                                        self.__waiting_cdt.notify_all()
-                                    return
+                elif ctrl_type == HsmsSsControlType.LINKTEST_REQ:
 
-                                ctrl_type = msg.get_control_type()
+                    conn.send(self.build_linktest_rsp(recv_msg))
 
-                                try:
-                                    if ctrl_type == HsmsSsControlType.DATA:
+                elif ctrl_type == HsmsSsControlType.SEPARATE_REQ:
 
-                                        if self.get_hsmsss_communicate_state() == HsmsSsCommunicateState.SELECTED:
-                                            pq.put(msg)
-                                        else:
-                                            self.send_reject_req(msg, HsmsSsRejectReason.NOT_SELECTED)
+                    with self.__circuit_cdt:
+                        self.__circuit_cdt.notify_all()
 
-                                    elif ctrl_type == HsmsSsControlType.LINKTEST_REQ:
+                elif ctrl_type == HsmsSsControlType.SELECT_REQ:
 
-                                        self.send_linktest_rsp(msg)
+                    conn.send(
+                        self.build_reject_req(
+                            recv_msg,
+                            HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
 
-                                    elif ctrl_type == HsmsSsControlType.SEPARATE_REQ:
+                elif (ctrl_type == HsmsSsControlType.SELECT_RSP
+                    or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
 
-                                        with self.__waiting_cdt:
-                                            self.__waiting_cdt.notify_all()
+                    conn.send(
+                        self.build_reject_req(
+                            recv_msg,
+                            HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
 
-                                    elif ctrl_type == HsmsSsControlType.SELECT_REQ:
-                                        self.send_reject_req(msg, HsmsSsRejectReason.NOT_SUPPORT_TYPE_S)
+                elif ctrl_type == HsmsSsControlType.REJECT_REQ:
 
-                                    elif (ctrl_type == HsmsSsControlType.SELECT_RSP
-                                        or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
+                    # Nothing
+                    pass
 
-                                        self.send_reject_req(msg, HsmsSsRejectReason.TRANSACTION_NOT_OPEN)
+                else:
 
-                                    elif ctrl_type == HsmsSsControlType.REJECT_REQ:
+                    if HsmsSsControlType.has_s_type(msg.get_s_type()):
 
-                                        # Nothing
-                                        pass
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
 
-                                    else:
+                    else:
 
-                                        if HsmsSsControlType.has_s_type(msg.get_s_type()):
-                                            self.send_reject_req(msg, HsmsSsRejectReason.NOT_SUPPORT_TYPE_P)
-                                        else:
-                                            self.send_reject_req(msg, HsmsSsRejectReason.NOT_SUPPORT_TYPE_S)
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
 
-                                except HsmsSsCommunicatorError as e:
-                                    self._put_error(e)
-                                except HsmsSsSendMessageError as e:
-                                    self._put_error(e)
+            except HsmsSsSendMessageError as e:
+                self._put_error(e)
+            except HsmsSsWaitReplyMessageError as e:
+                self._put_error(e)
+            except HsmsSsCommunicatorError as e:
+                self._put_error(e)
 
-                            with HsmsSsConnection(sock, self, _recv) as conn:
-
-                                try:
-                                    self._put_hsmsss_comm_state_to_connected()
-
-                                    rsp = conn.send(self.build_select_req())
-
-                                    if rsp is not None:
-
-                                        if rsp.get_control_type() == HsmsSsControlType.SELECT_RSP:
-
-                                            ss = rsp.get_select_status()
-
-                                            if (ss == HsmsSsSelectStatus.SUCCESS
-                                                or ss == HsmsSsSelectStatus.ACTIVED):
-
-                                                self._set_hsmsss_connection(
-                                                    conn,
-                                                    self._put_hsmsss_comm_state_to_selected)
-
-                                                with self.__waiting_cdt:
-                                                    self.__waiting_cdt.wait()
-
-                                finally:
-                                    self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
-
-                                    try:
-                                        sock.shutdown(socket.SHUT_RDWR)
-                                    except Exception:
-                                        pass
-
-                    except ConnectionError as e:
-                        self._put_error(HsmsSsCommunicatorError(e))
-                    except HsmsSsCommunicatorError as e:
-                        self._put_error(e)
-                    except HsmsSsSendMessageError as e:
-                        self._put_error(e)
-                    except HsmsSsWaitReplyError as e:
-                        self._put_error(e)
-                    finally:
-                        self._put_hsmsss_comm_state_to_not_connected()
-
-                    if self.is_closed:
-                        return None
-
-                    with self.__waiting_cdt:
-                        self.__waiting_cdt.wait(self.timeout_t5)
-
-        self.__tpe.submit(_f)
+        th = threading.Thread(target=_f, daemon=True)
+        try:
+            self.__ths.append(th)
+            th.start()
+        finally:
+            self.__ths.remove(th)
 
     def _close(self):
 
-        with self.__open_close_local_lock:
-            if self.is_closed:
-                return
-            self._set_closed()
+        if self.is_closed:
+            return
 
-        with self.__waiting_cdt:
-            self.__waiting_cdt.notify_all()
+        super()._close()
 
-        self.__tpe.shutdown(wait=True, cancel_futures=True)
+        self._set_closed()
+
+        self.__recv_primary_msg_putter.shutdown()
+
+        for cdt in self.__cdts:
+            with cdt:
+                cdt.notify_all()
+
+        for th in self.__ths:
+            th.join(0.1)
 
 
 class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
 
-    _PROTOCOL_NAME = 'HSMS-SS-PASSIVE'
+    __PROTOCOL = 'HSMS-SS-PASSIVE'
+    __TIMEOUT_REBIND = 5.0
 
     def __init__(self, ip_address, port, session_id, is_equip, **kwargs):
         super(HsmsSsPassiveCommunicator, self).__init__(session_id, is_equip, **kwargs)
 
-        self.__tpe = concurrent.futures.ThreadPoolExecutor(max_workers=64)
         self.__ipaddr = (ip_address, port)
 
-        self.__waiting_cdts = list()
-        self.__open_close_local_lock = threading.Lock()
+        self.__cdts = list()
+        self.__ths = list()
 
-    def get_protocol(self):
-        return self._PROTOCOL_NAME
+        self.__recv_primary_msg_putter = CallbackQueuing(self._put_recv_primary_msg)
 
-    def get_ipaddress(self):
+        self.timeout_rebind = kwargs.get('timeout_rebind', self.__TIMEOUT_REBIND)
+
+    def _get_protocol(self):
+        return self.__PROTOCOL
+
+    def _get_ipaddress(self):
         return self.__ipaddr
+
+    @property
+    def timeout_rebind(self):
+        pass
+
+    @timeout_rebind.setter
+    def timeout_rebind(self, val):
+        self.__timeout_rebind = float(val)
+
+    @timeout_rebind.getter
+    def timeout_rebind(self):
+        return self.__timeout_rebind
 
     def _open(self):
 
-        with self.__open_close_local_lock:
+        with self._open_close_rlock:
             if self.is_closed:
                 raise RuntimeError("Already closed")
             if self.is_open:
                 raise RuntimeError("Already opened")
+
+            th = threading.Thread(target=self.__loop, daemon=True)
+            self.__ths.append(th)
+            th.start()
+
+            super()._open()
+
             self._set_opened()
 
-        def _open_server():
+    def __loop(self):
+        cdt = threading.Condition()
+        try:
+            self.__cdts.append(cdt)
+            while not self.is_closed:
+                self.__open_server()
+                if self.is_closed:
+                    return
+                with cdt:
+                    cdt.wait(self.timeout_rebind)
+        finally:
+            self.__cdts.remove(cdt)
 
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+    def __open_server(self):
+        cdt = threading.Condition()
+        try:
+            self.__cdts.append(cdt)
 
-                    server.bind(self.get_ipaddress())
-                    server.listen()
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
 
-                    cdt = threading.Condition()
+                server.bind(self._get_ipaddress())
+                server.listen()
 
-                    def _f():
-                        try:
-                            while not self.is_closed:
+                def _f():
 
-                                sock = (server.accept())[0]
+                    def _f_sock(sock):
+                        with sock:
+                            try:
+                                self.__accept_socket(sock)
+                            except Exception as e:
+                                self._put_error(e)
+                            finally:
+                                try:
+                                    sock.shutdown(socket.SHUT_RDWR)
+                                except Exception:
+                                    pass
 
-                                def _ff():
-                                    self._accept_socket(sock)
+                    try:
+                        while not self.is_closed:
+                            sock = (server.accept())[0]
 
-                                self.__tpe.submit(_ff)
+                            threading.Thread(
+                                target=_f_sock,
+                                args=(sock, ),
+                                daemon=True
+                                ).start()
 
-                        except Exception as e:
-                            if self.is_open:
-                                self._put_error(HsmsSsCommunicatorError(e))
+                    except Exception as e:
+                        if not self.is_closed:
+                            self._put_error(HsmsSsCommunicatorError(e))
 
-                    self.__tpe.submit(_f)
+                    finally:
+                        with cdt:
+                            cdt.notify_all()
 
-                    self.__waiting_cdts.append(cdt)
+                th = threading.Thread(target=_f, daemon=True)
+
+                try:
+                    self.__ths.append(th)
+                    th.start()
+
                     with cdt:
                         cdt.wait()
 
-            except Exception as e:
-                if self.is_open:
-                    self._put_error(HsmsSsCommunicatorError(e))
-
-        self.__tpe.submit(_open_server)
-
-    def _accept_socket(self, sock):
-
-        with CallbackQueuing(self._put_recv_primary_msg) as pq, \
-                WaitingQueuing() as wq, \
-                HsmsSsConnection(sock, self, wq.put) as conn:
-
-            cdt = threading.Condition()
-
-            def _f():
-
-                try:
-
-                    while self.is_open:
-
-                        msg = wq.poll(self.timeout_t7)
-
-                        if msg is None:
-                            raise HsmsSsCommunicatorError("T7-Timeout")
-
-                        ctrl_type = msg.get_control_type()
-
-                        if ctrl_type == HsmsSsControlType.SELECT_REQ:
-
-                            if self._set_hsmsss_connection(conn):
-
-                                conn.send(HsmsSsControlMessage.build_select_response(
-                                    msg,
-                                    HsmsSsSelectStatus.SUCCESS))
-
-                                break
-
-                            else:
-
-                                conn.send(HsmsSsControlMessage.build_select_response(
-                                    msg,
-                                    HsmsSsSelectStatus.ALREADY_USED))
-
-                        elif ctrl_type == HsmsSsControlType.LINKTEST_REQ:
-
-                            conn.send(HsmsSsControlMessage.build_linktest_response(msg))
-
-                        elif ctrl_type == HsmsSsControlType.DATA:
-
-                            conn.send(HsmsSsControlMessage.build_reject_request(
-                                msg,
-                                HsmsSsRejectReason.NOT_SELECTED))
-
-                        elif ctrl_type == HsmsSsControlType.SEPARATE_REQ:
-
-                            return None
-
-                        elif (ctrl_type == HsmsSsControlType.SELECT_RSP
-                            or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
-
-                            conn.send(HsmsSsControlMessage.build_reject_request(
-                                msg,
-                                HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
-
-                        elif ctrl_type == HsmsSsControlType.REJECT_REQ:
-
-                            #Nothing
-                            pass
-
-                        else:
-
-                            if HsmsSsControlType.has_s_type(msg.get_s_type()):
-
-                                conn.send(HsmsSsControlMessage.build_reject_request(
-                                    msg,
-                                    HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
-
-                            else:
-
-                                conn.send(HsmsSsControlMessage.build_reject_request(
-                                    msg,
-                                    HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
-
-                    try:
-                        self._put_hsmsss_comm_state_to_selected()
-
-                        while True:
-
-                            msg = wq.poll()
-
-                            if msg is None:
-                                raise HsmsSsCommunicatorError("Terminate detect")
-
-                            ctrl_type = msg.get_control_type()
-
-                            if ctrl_type == HsmsSsControlType.DATA:
-
-                                pq.put(msg)
-
-                            elif ctrl_type == HsmsSsControlType.LINKTEST_REQ:
-
-                                self.send_linktest_rsp(msg)
-
-                            elif ctrl_type == HsmsSsControlType.SELECT_REQ:
-
-                                self.send_select_rsp(msg, HsmsSsSelectStatus.ACTIVED)
-
-                            elif ctrl_type == HsmsSsControlType.SEPARATE_REQ:
-
-                                return None
-
-                            elif (ctrl_type == HsmsSsControlType.SELECT_RSP
-                                or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
-
-                                self.send_reject_req(msg, HsmsSsRejectReason.TRANSACTION_NOT_OPEN)
-
-                            elif ctrl_type == HsmsSsControlType.REJECT_REQ:
-
-                                #Nothing
-                                pass
-
-                            else:
-
-                                if HsmsSsControlType.has_s_type(msg.get_s_type()):
-                                    self.send_reject_req(msg, HsmsSsRejectReason.NOT_SUPPORT_TYPE_P)
-                                else:
-                                    self.send_reject_req(msg, HsmsSsRejectReason.NOT_SUPPORT_TYPE_S)
-
-                    finally:
-                        self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
-
-                except HsmsSsCommunicatorError as e:
-                    if self.is_open:
-                        self._put_error(e)
-                except HsmsSsSendMessageError as e:
-                    self._put_error(e)
                 finally:
+                    self.__ths.remove(th)
+
+        except Exception as e:
+            if not self.is_closed:
+                self._put_error(HsmsSsCommunicatorError(e))
+
+        finally:
+            self.__cdts.remove(cdt)
+
+    def __accept_socket(self, sock):
+
+        qq = WaitingQueuing()
+
+        cdt = threading.Condition()
+
+        try:
+            self.__cdts.append(cdt)
+
+            def _put_to_qq(recv_msg, conn):
+                qq.put((recv_msg, conn))
+
+            with self._build_hsmsss_connection(sock, _put_to_qq) as conn:
+
+                def _comm():
+                    conn.await_termination()
                     with cdt:
                         cdt.notify_all()
 
-            self.__tpe.submit(_f)
+                def _receiving():
 
-            try:
-                self.__waiting_cdts.append(cdt)
+                    if self.__receiving_msg_until_selected(qq):
+
+                        try:
+                            self.__receiving_msg(qq)
+                        finally:
+                            self._unset_hsmsss_connection(
+                                self._put_hsmsss_comm_state_to_not_connected)
+
+                    with cdt:
+                        cdt.notify_all()
+
+                threading.Thread(target=_comm, daemon=True).start()
+                threading.Thread(target=_receiving, daemon=True).start()
+
                 with cdt:
                     cdt.wait()
-            finally:
-                self.__waiting_cdts.remove(cdt)
 
-                try:
-                    sock.shutdown(socket.SHUT_RDWR)
-                except Exception:
+        finally:
+            self.__cdts.remove(cdt)
+            qq.shutdown()
+
+    def __receiving_msg_until_selected(self, qq):
+
+        while not self.is_closed:
+
+            tt = qq.poll(self.timeout_t7)
+
+            if tt is None:
+                return False
+
+            recv_msg = tt[0]
+            conn = tt[1]
+
+            ctrl_type = recv_msg.get_control_type()
+
+            try:
+                if ctrl_type == HsmsSsControlType.DATA:
+
+                    conn.send(
+                        self.build_select_rsp(
+                            recv_msg,
+                            HsmsSsRejectReason.NOT_SELECTED))
+
+                elif ctrl_type == HsmsSsControlType.LINKTEST_REQ:
+
+                    conn.send(self.build_linktest_rsp(recv_msg))
+
+                elif ctrl_type == HsmsSsControlType.SEPARATE_REQ:
+
+                    return False
+
+                elif ctrl_type == HsmsSsControlType.SELECT_REQ:
+
+                    r = self._set_hsmsss_connection(
+                        conn,
+                        self._put_hsmsss_comm_state_to_selected)
+
+                    if r:
+
+                        conn.send(
+                            self.build_select_rsp(
+                                recv_msg,
+                                HsmsSsSelectStatus.SUCCESS))
+
+                        return True
+
+                    else:
+
+                        conn.send(
+                            self.build_select_rsp(
+                                recv_msg,
+                                HsmsSsSelectStatus.ALREADY_USED))
+
+                elif (ctrl_type == HsmsSsControlType.SELECT_RSP
+                    or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
+
+                    conn.send(
+                        self.build_reject_req(
+                            recv_msg,
+                            HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
+
+                elif ctrl_type == HsmsSsControlType.REJECT_REQ:
+
+                    # Nothing
                     pass
 
-                sock.close()
+                else:
 
-            return None
+                    if HsmsSsControlType.has_s_type(recv_msg.get_s_type()):
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
+
+                    else:
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
+
+            except HsmsSsSendMessageError as e:
+                self._put_error(e)
+            except HsmsSsWaitReplyMessageError as e:
+                self._put_error(e)
+            except HsmsSsCommunicatorError as e:
+                self._put_error(e)
+
+        return False
+
+    def __receiving_msg(self, qq):
+
+        while not self.is_closed:
+
+            tt = qq.poll()
+
+            if tt is None:
+                return False
+
+            recv_msg = tt[0]
+            conn = tt[1]
+
+            ctrl_type = recv_msg.get_control_type()
+
+            try:
+                if ctrl_type == HsmsSsControlType.DATA:
+
+                    self.__recv_primary_msg_putter.put(recv_msg)
+
+                elif ctrl_type == HsmsSsControlType.LINKTEST_REQ:
+
+                    conn.send(self.build_linktest_rsp(recv_msg))
+
+                elif ctrl_type == HsmsSsControlType.SEPARATE_REQ:
+
+                    return False
+
+                elif ctrl_type == HsmsSsControlType.SELECT_REQ:
+
+                    conn.send(
+                        self.build_select_rsp(
+                            recv_msg,
+                            HsmsSsSelectStatus.ACTIVED))
+
+                elif (ctrl_type == HsmsSsControlType.SELECT_RSP
+                    or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
+
+                    conn.send(
+                        self.build_reject_req(
+                            recv_msg,
+                            HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
+
+                elif ctrl_type == HsmsSsControlType.REJECT_REQ:
+
+                    # Nothing
+                    pass
+
+                else:
+
+                    if HsmsSsControlType.has_s_type(recv_msg.get_s_type()):
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
+
+                    else:
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
+
+            except HsmsSsSendMessageError as e:
+                self._put_error(e)
+            except HsmsSsWaitReplyMessageError as e:
+                self._put_error(e)
+            except HsmsSsCommunicatorError as e:
+                self._put_error(e)
+
+        return False
 
     def _close(self):
 
-        with self.__open_close_local_lock:
-            if self.is_closed:
-                return
-            self._set_closed()
+        if self.is_closed:
+            return
 
-        for cdt in self.__waiting_cdts:
+        super()._close()
+
+        self._set_closed()
+
+        for cdt in self.__cdts:
             with cdt:
                 cdt.notify_all()
 
-        self.__tpe.shutdown(wait=True, cancel_futures=True)
+        for th in self.__ths:
+            th.join(0.1)
 
 
 class Secs1CommunicatorError(SecsCommunicatorError):
@@ -3098,7 +3456,7 @@ class MsgAndRecvBytesWaitingQueuing(WaitingQueuing):
         self.puts(bs)
 
     def entry_msg(self, msg):
-        if msg:
+        if msg is not None and not self._is_terminated():
             with self._v_lock:
                 self.__msg_queue.append(msg)
                 with self._v_cdt:
@@ -3106,24 +3464,22 @@ class MsgAndRecvBytesWaitingQueuing(WaitingQueuing):
 
     def poll_either(self, timeout=None):
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return None, None
+        if self._is_terminated():
+            return None, None
 
         with self._v_lock:
             if self.__msg_queue:
                 return self.__msg_queue.pop(0), None
 
-        with self._v_cdt:
-            v = self._poll_vv()
-            if v is not None:
-                return None, v
+        v = self._poll_vv()
+        if v is not None:
+            return None, v
 
+        with self._v_cdt:
             self._v_cdt.wait(timeout)
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return None, None
+        if self._is_terminated():
+            return None, None
 
         with self._v_lock:
             if self.__msg_queue:
@@ -3133,9 +3489,8 @@ class MsgAndRecvBytesWaitingQueuing(WaitingQueuing):
 
     def recv_bytes_garbage(self, timeout):
 
-        with self._shutdown_lock:
-            if self._shutdowned:
-                return
+        if self._is_terminated():
+            return
 
         with self._v_lock:
             del self._vv[:]
@@ -3174,14 +3529,14 @@ class SendSecs1MessagePack:
         return self.present_block().ebit
 
     def wait_until_sended(self, timeout=None):
-        with self.__cdt:
-            while True:
-                with self.__lock:
-                    if self.__sended:
-                        return
-                    elif self.__except is not None:
-                        raise self.__except
+        while True:
+            with self.__lock:
+                if self.__sended:
+                    return
+                elif self.__except is not None:
+                    raise self.__except
 
+            with self.__cdt:
                 self.__cdt.wait(timeout)
 
     def notify_sended(self):
@@ -3201,16 +3556,16 @@ class SendSecs1MessagePack:
         with self.__lock:
             self.__timer_resetted = True
 
-        with self.__cdt:
-            while True:
-                with self.__lock:
-                    if self.__reply_msg is not None:
-                        return self.__reply_msg
-                    elif self.__timer_resetted:
-                        self.__timer_resetted = False
-                    else:
-                        return None
+        while True:
+            with self.__lock:
+                if self.__reply_msg is not None:
+                    return self.__reply_msg
+                elif self.__timer_resetted:
+                    self.__timer_resetted = False
+                else:
+                    return None
 
+            with self.__cdt:
                 self.__cdt.wait(timeout)
 
     def notify_reply_msg(self, msg):
@@ -3535,8 +3890,6 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
                                     'count': count
                                 })
 
-                                break
-
                 pack.notify_except(Secs1RetryOverError(
                     "Send-Message Retry-Over",
                     pack.secs1msg()))
@@ -3799,6 +4152,7 @@ class AbstractSecs1OnTcpIpCommunicator(AbstractSecs1Communicator):
 class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
     __DEFAULT_RECONNECT = 5.0
+    __PROTOCOL = 'SECS-I-on-TCP/IP'
 
     def __init__(self, ip_address, port, device_id, is_equip, is_master, **kwargs):
         super(Secs1OnTcpIpCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
@@ -3809,6 +4163,26 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
         self.__cdts = list()
 
         self.reconnect = kwargs.get('reconnect', self.__DEFAULT_RECONNECT)
+
+    def __str__(self):
+        return str({
+            'protocol': self.__PROTOCOL,
+            'ip_address': (self.__ipaddr[0] + ':' + str(self.__ipaddr[1])),
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
+
+    def __repr__(self):
+        return repr({
+            'protocol': self.__PROTOCOL,
+            'ip_address': self.__ipaddr,
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
 
     @property
     def reconnect(self):
@@ -3893,7 +4267,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
     def _close(self):
 
         if self.is_closed:
-            return;
+            return
 
         super()._close()
 
@@ -3910,6 +4284,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
     __DEFAULT_REBIND = 5.0
+    __PROTOCOL = 'SECS-I-on-TCP/IP-Receiver'
 
     def __init__(self, ip_address, port, device_id, is_equip, is_master, **kwargs):
         super(Secs1OnTcpIpReceiverCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
@@ -3920,6 +4295,26 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
         self.__cdts = list()
 
         self.rebind = kwargs.get('rebind', self.__DEFAULT_REBIND)
+
+    def __str__(self):
+        return str({
+            'protocol': self.__PROTOCOL,
+            'ip_address': (self.__ipaddr[0] + ':' + str(self.__ipaddr[1])),
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
+
+    def __repr__(self):
+        return repr({
+            'protocol': self.__PROTOCOL,
+            'ip_address': self.__ipaddr,
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
 
     @property
     def rebind(self):
@@ -4041,6 +4436,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
 
     __DEFAULT_REOPEN = 5.0
+    __PROTOCOL = 'SECS-I-on-pySerial'
 
     def __init__(self, port, baudrate, device_id, is_equip, is_master, **kwargs):
         super(Secs1OnPySerialCommunicator, self).__init__(device_id, is_equip, is_master, **kwargs)
@@ -4055,6 +4451,28 @@ class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
 
         self.__serial = None
         self.__serial_lock = threading.Lock()
+
+    def __str__(self):
+        return str({
+            'protocol': self.__PROTOCOL,
+            'port': self.__port,
+            'baudrate': self.__baudrate,
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
+
+    def __repr__(self):
+        return repr({
+            'protocol': self.__PROTOCOL,
+            'port': self.__port,
+            'baudrate': self.__baudrate,
+            'device_id': self.device_id,
+            'is_equip': self.is_equip,
+            'is_master': self.is_master,
+            'name': self.name
+        })
 
     @property
     def reopen(self):
@@ -4122,7 +4540,6 @@ class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
 
                         try:
                             ser = serial.Serial(
-                                port=self.__port,
                                 baudrate=self.__baudrate,
                                 bytesize=serial.EIGHTBITS,
                                 parity=serial.PARITY_NONE,
@@ -4130,6 +4547,7 @@ class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
                             )
 
                             try:
+                                ser.port = self.__port
                                 ser.open()
 
                                 def _ff():

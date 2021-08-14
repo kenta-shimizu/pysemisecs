@@ -1,5 +1,4 @@
 import threading
-import socket
 import secs
 
 
@@ -309,6 +308,7 @@ class HsmsSsConnection:
                             raise HsmsSsTimeoutT3Error("HsmsSs-Timeout-T3", msg)
 
                         else:
+                            self.shutdown()
                             raise HsmsSsTimeoutT6Error("HsmsSs-Timeout-T6", msg)
 
                 else:
@@ -415,7 +415,7 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
     
     def _close(self):
         with self._open_close_rlock:
-            if self.is_closed():
+            if self.is_closed:
                 return
         
         self._set_closed()
@@ -445,9 +445,10 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
 
     def _unset_hsmsss_connection(self, callback=None):
         with self._hsmsss_connection_lock:
-            self._hsmsss_connection = None
-            if callback is not None:
-                callback()
+            if self._hsmsss_connection is not None:
+                self._hsmsss_connection = None
+                if callback is not None:
+                    callback()
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         return self.send_hsmsss_msg(

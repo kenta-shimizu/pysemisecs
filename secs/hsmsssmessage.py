@@ -21,7 +21,7 @@ class HsmsSsControlType:
     REJECT_REQ = (0x00, 0x07)
     SEPARATE_REQ = (0x00, 0x09)
 
-    _ITEMS = (
+    __ITEMS = (
         DATA,
         SELECT_REQ, SELECT_RSP,
         DESELECT_REQ, DESELECT_RSP,
@@ -32,14 +32,14 @@ class HsmsSsControlType:
 
     @classmethod
     def get(cls, v):
-        for x in cls._ITEMS:
+        for x in cls.__ITEMS:
             if x[0] == v[0] and x[1] == v[1]:
                 return x
         return cls.UNDEFINED
 
     @classmethod
     def has_s_type(cls, b):
-        for x in cls._ITEMS:
+        for x in cls.__ITEMS:
             if x[1] == b:
                 return True
         return False
@@ -54,7 +54,7 @@ class HsmsSsSelectStatus():
     NOT_READY = 0x02
     ALREADY_USED = 0x03
 
-    _ITEMS = (
+    __ITEMS = (
         SUCCESS,
         ACTIVED,
         NOT_READY,
@@ -63,7 +63,7 @@ class HsmsSsSelectStatus():
 
     @classmethod
     def get(cls, b):
-        for x in cls._ITEMS:
+        for x in cls.__ITEMS:
             if x == b:
                 return x
         return cls.UNKNOWN
@@ -78,7 +78,7 @@ class HsmsSsRejectReason():
     TRANSACTION_NOT_OPEN = 0x03
     NOT_SELECTED = 0x04
 
-    _ITEMS = (
+    __ITEMS = (
         NOT_SUPPORT_TYPE_S,
         NOT_SUPPORT_TYPE_P,
         TRANSACTION_NOT_OPEN,
@@ -87,7 +87,7 @@ class HsmsSsRejectReason():
 
     @classmethod
     def get(cls, b):
-        for x in cls._ITEMS:
+        for x in cls.__ITEMS:
             if x == b:
                 return x
         return cls.UNKNOWN

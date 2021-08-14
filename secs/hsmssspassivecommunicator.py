@@ -16,6 +16,8 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
         self.__cdts = list()
         self.__ths = list()
 
+        self.__recv_primary_msg_putter = secs.CallbackQueuing(self._put_recv_primary_msg)
+        
         self.timeout_rebind = kwargs.get('timeout_rebind', self.__TIMEOUT_REBIND)
 
     def _get_protocol(self):
@@ -76,14 +78,33 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 server.listen()
 
                 def _f():
+
+                    def _f_sock(sock):
+                        with sock:
+                            try:
+                                self.__accept_socket(sock)
+                            except Exception as e:
+                                self._put_error(e)
+                            finally:
+                                try:
+                                    sock.shutdown(socket.SHUT_RDWR)
+                                except Exception:
+                                    pass
+                    
                     try:
                         while not self.is_closed:
                             sock = (server.accept())[0]
-                            self.__accept_socket(sock)
+
+                            threading.Thread(
+                                target=_f_sock,
+                                args=(sock, ),
+                                daemon=True
+                                ).start()
 
                     except Exception as e:
                         if not self.is_closed:
                             self._put_error(secs.HsmsSsCommunicatorError(e))
+                    
                     finally:
                         with cdt:
                             cdt.notify_all()
@@ -109,174 +130,207 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
     
     def __accept_socket(self, sock):
         
-        def _f():
-            with sock:
-                try:
-                    # TODO
-                    
-                    pass
+        qq = secs.WaitingQueuing()
 
-                finally:
-                    try:
-                        sock.shutdown(socket.SHUT_RDWR)
-                    except Exception:
-                        pass
+        cdt = threading.Condition()
 
-        threading.Thread(target=_f, daemon=True).start()
-    
+        try:
+            self.__cdts.append(cdt)
 
-    def _accept_socket2(self, sock):
+            def _put_to_qq(recv_msg, conn):
+                qq.put((recv_msg, conn))
+            
+            with self._build_hsmsss_connection(sock, _put_to_qq) as conn:
 
-        with secs.CallbackQueuing(self._put_recv_primary_msg) as pq, \
-                secs.WaitingQueuing() as wq, \
-                secs.HsmsSsConnection(sock, self, wq.put) as conn:
-
-            cdt = threading.Condition()
-
-            def _f():
-
-                try:
-
-                    while self.is_open:
-
-                        msg = wq.poll(self.timeout_t7)
-
-                        if msg is None:
-                            raise secs.HsmsSsCommunicatorError("T7-Timeout")
-
-                        ctrl_type = msg.get_control_type()
-
-                        if ctrl_type == secs.HsmsSsControlType.SELECT_REQ:
-
-                            if self._set_hsmsss_connection(conn):
-
-                                conn.send(secs.HsmsSsControlMessage.build_select_response(
-                                    msg,
-                                    secs.HsmsSsSelectStatus.SUCCESS))
-
-                                break
-
-                            else:
-
-                                conn.send(secs.HsmsSsControlMessage.build_select_response(
-                                    msg,
-                                    secs.HsmsSsSelectStatus.ALREADY_USED))
-
-                        elif ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ:
-
-                            conn.send(secs.HsmsSsControlMessage.build_linktest_response(msg))
-
-                        elif ctrl_type == secs.HsmsSsControlType.DATA:
-
-                            conn.send(secs.HsmsSsControlMessage.build_reject_request(
-                                msg,
-                                secs.HsmsSsRejectReason.NOT_SELECTED))
-
-                        elif ctrl_type == secs.HsmsSsControlType.SEPARATE_REQ:
-
-                            return None
-
-                        elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
-                            or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
-
-                            conn.send(secs.HsmsSsControlMessage.build_reject_request(
-                                msg,
-                                secs.HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
-
-                        elif ctrl_type == secs.HsmsSsControlType.REJECT_REQ:
-
-                            #Nothing
-                            pass
-
-                        else:
-
-                            if secs.HsmsSsControlType.has_s_type(msg.get_s_type()):
-
-                                conn.send(secs.HsmsSsControlMessage.build_reject_request(
-                                    msg,
-                                    secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
-
-                            else:
-
-                                conn.send(secs.HsmsSsControlMessage.build_reject_request(
-                                    msg,
-                                    secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
-
-                    try:
-                        self._put_hsmsss_comm_state_to_selected()
-
-                        while True:
-
-                            msg = wq.poll()
-
-                            if msg is None:
-                                raise secs.HsmsSsCommunicatorError("Terminate detect")
-
-                            ctrl_type = msg.get_control_type()
-
-                            if ctrl_type == secs.HsmsSsControlType.DATA:
-
-                                pq.put(msg)
-
-                            elif ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ:
-
-                                self.send_linktest_rsp(msg)
-
-                            elif ctrl_type == secs.HsmsSsControlType.SELECT_REQ:
-
-                                self.send_select_rsp(msg, secs.HsmsSsSelectStatus.ACTIVED)
-
-                            elif ctrl_type == secs.HsmsSsControlType.SEPARATE_REQ:
-
-                                return None
-
-                            elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
-                                or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
-
-                                self.send_reject_req(msg, secs.HsmsSsRejectReason.TRANSACTION_NOT_OPEN)
-
-                            elif ctrl_type == secs.HsmsSsControlType.REJECT_REQ:
-
-                                #Nothing
-                                pass
-
-                            else:
-
-                                if secs.HsmsSsControlType.has_s_type(msg.get_s_type()):
-                                    self.send_reject_req(msg, secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_P)
-                                else:
-                                    self.send_reject_req(msg, secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S)
-
-                    finally:
-                        self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
-
-                except secs.HsmsSsCommunicatorError as e:
-                    if self.is_open:
-                        self._put_error(e)
-                except secs.HsmsSsSendMessageError as e:
-                    self._put_error(e)
-                finally:
+                def _comm():
+                    conn.await_termination()
                     with cdt:
                         cdt.notify_all()
+                
+                def _receiving():
 
-            self.__tpe.submit(_f)
+                    if self.__receiving_msg_until_selected(qq):
 
-            try:
-                self.__waiting_cdts.append(cdt)
+                        try:
+                            self.__receiving_msg(qq)
+                        finally:
+                            self._unset_hsmsss_connection(
+                                self._put_hsmsss_comm_state_to_not_connected)
+
+                    with cdt:
+                        cdt.notify_all()
+                
+                threading.Thread(target=_comm, daemon=True).start()
+                threading.Thread(target=_receiving, daemon=True).start()
+
                 with cdt:
                     cdt.wait()
-            finally:
-                self.__waiting_cdts.remove(cdt)
 
-                try:
-                    sock.shutdown(socket.SHUT_RDWR)
-                except Exception:
+        finally:
+            self.__cdts.remove(cdt)
+            qq.shutdown()
+
+    def __receiving_msg_until_selected(self, qq):
+
+        while not self.is_closed:
+
+            tt = qq.poll(self.timeout_t7)
+
+            if tt is None:
+                return False
+            
+            recv_msg = tt[0]
+            conn = tt[1]
+
+            ctrl_type = recv_msg.get_control_type()
+
+            try:
+                if ctrl_type == secs.HsmsSsControlType.DATA:
+
+                    conn.send(
+                        self.build_select_rsp(
+                            recv_msg,
+                            secs.HsmsSsRejectReason.NOT_SELECTED))
+
+                elif ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ:
+
+                    conn.send(self.build_linktest_rsp(recv_msg))
+
+                elif ctrl_type == secs.HsmsSsControlType.SEPARATE_REQ:
+
+                    return False
+
+                elif ctrl_type == secs.HsmsSsControlType.SELECT_REQ:
+
+                    r = self._set_hsmsss_connection(
+                        conn,
+                        self._put_hsmsss_comm_state_to_selected)
+                    
+                    if r:
+
+                        conn.send(
+                            self.build_select_rsp(
+                                recv_msg,
+                                secs.HsmsSsSelectStatus.SUCCESS))
+                        
+                        return True
+
+                    else:
+
+                        conn.send(
+                            self.build_select_rsp(
+                                recv_msg,
+                                secs.HsmsSsSelectStatus.ALREADY_USED))
+                                
+                elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
+                    or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
+
+                    conn.send(
+                        self.build_reject_req(
+                            recv_msg,
+                            secs.HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
+
+                elif ctrl_type == secs.HsmsSsControlType.REJECT_REQ:
+
+                    # Nothing
                     pass
 
-                sock.close()
+                else:
 
-            return None
+                    if secs.HsmsSsControlType.has_s_type(recv_msg.get_s_type()):
 
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
+
+                    else:
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
+                    
+            except secs.HsmsSsSendMessageError as e:
+                self._put_error(e)
+            except secs.HsmsSsWaitReplyMessageError as e:
+                self._put_error(e)
+            except secs.HsmsSsCommunicatorError as e:
+                self._put_error(e)
+
+        return False
+
+    def __receiving_msg(self, qq):
+
+        while not self.is_closed:
+
+            tt = qq.poll()
+
+            if tt is None:
+                return False
+            
+            recv_msg = tt[0]
+            conn = tt[1]
+
+            ctrl_type = recv_msg.get_control_type()
+
+            try:
+                if ctrl_type == secs.HsmsSsControlType.DATA:
+
+                    self.__recv_primary_msg_putter.put(recv_msg)
+
+                elif ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ:
+
+                    conn.send(self.build_linktest_rsp(recv_msg))
+
+                elif ctrl_type == secs.HsmsSsControlType.SEPARATE_REQ:
+
+                    return False
+
+                elif ctrl_type == secs.HsmsSsControlType.SELECT_REQ:
+                    
+                    conn.send(
+                        self.build_select_rsp(
+                            recv_msg,
+                            secs.HsmsSsSelectStatus.ACTIVED))
+
+                elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
+                    or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
+
+                    conn.send(
+                        self.build_reject_req(
+                            recv_msg,
+                            secs.HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
+
+                elif ctrl_type == secs.HsmsSsControlType.REJECT_REQ:
+
+                    # Nothing
+                    pass
+
+                else:
+
+                    if secs.HsmsSsControlType.has_s_type(recv_msg.get_s_type()):
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
+
+                    else:
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
+                    
+            except secs.HsmsSsSendMessageError as e:
+                self._put_error(e)
+            except secs.HsmsSsWaitReplyMessageError as e:
+                self._put_error(e)
+            except secs.HsmsSsCommunicatorError as e:
+                self._put_error(e)
+
+        return False
 
     def _close(self):
 

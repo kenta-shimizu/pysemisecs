@@ -63,7 +63,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                 sock.connect(self._get_ipaddress())
 
-                with self._build_hsmsss_connection(self, sock, self.__receiving_msg) as conn:
+                with self._build_hsmsss_connection(sock, self.__receiving_msg) as conn:
 
                     def _f():
                         conn.await_termination()
@@ -95,7 +95,8 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                                     self.__circuit_cdt.wait()
                                 
                     finally:
-                        self._unset_hsmsss_connection(self._put_hsmsss_comm_state_to_not_connected)
+                        self._unset_hsmsss_connection(
+                            self._put_hsmsss_comm_state_to_not_connected)
 
                         self.__ths.remove(th)
 
@@ -110,80 +111,91 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
             self._put_error(e)
         except secs.HsmsSsSendMessageError as e:
             self._put_error(e)
-        except secs.HsmsSsWaitReplyError as e:
+        except secs.HsmsSsWaitReplyMessageError as e:
             self._put_error(e)
     
     def __receiving_msg(self, recv_msg, conn):
 
-        if recv_msg is None:
-            with self.__circuit_cdt:
-                self.__circuit_cdt.notify_all()
-                return
+        def _f():
 
-        ctrl_type = recv_msg.get_control_type()
-
-        try:
-            if ctrl_type == secs.HsmsSsControlType.DATA:
-
-                if self.get_hsmsss_communicate_state() == secs.HsmsSsCommunicateState.SELECTED:
-
-                    self.__recv_primary_msg_putter.put(recv_msg)
-
-                else:
-                    conn.send(
-                        self.build_select_rsp(
-                            recv_msg,
-                            secs.HsmsSsRejectReason.NOT_SELECTED))
-
-            elif ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ:
-
-                conn.send(self.build_linktest_rsp(recv_msg))
-
-            elif ctrl_type == secs.HsmsSsControlType.SEPARATE_REQ:
-
+            if recv_msg is None:
                 with self.__circuit_cdt:
                     self.__circuit_cdt.notify_all()
+                    return
 
-            elif ctrl_type == secs.HsmsSsControlType.SELECT_REQ:
+            ctrl_type = recv_msg.get_control_type()
 
-                conn.send(
-                    self.build_reject_req(
-                        recv_msg,
-                        secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
+            try:
+                if ctrl_type == secs.HsmsSsControlType.DATA:
 
-            elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
-                or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
+                    if self.get_hsmsss_communicate_state() == secs.HsmsSsCommunicateState.SELECTED:
 
-                conn.send(
-                    self.build_reject_req(
-                        recv_msg,
-                        secs.HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
+                        self.__recv_primary_msg_putter.put(recv_msg)
 
-            elif ctrl_type == secs.HsmsSsControlType.REJECT_REQ:
+                    else:
+                        conn.send(
+                            self.build_select_rsp(
+                                recv_msg,
+                                secs.HsmsSsRejectReason.NOT_SELECTED))
 
-                # Nothing
-                pass
+                elif ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ:
 
-            else:
+                    conn.send(self.build_linktest_rsp(recv_msg))
 
-                if secs.HsmsSsControlType.has_s_type(msg.get_s_type()):
+                elif ctrl_type == secs.HsmsSsControlType.SEPARATE_REQ:
 
-                    conn.send(
-                        self.build_reject_req(
-                            recv_msg,
-                            secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
+                    with self.__circuit_cdt:
+                        self.__circuit_cdt.notify_all()
 
-                else:
+                elif ctrl_type == secs.HsmsSsControlType.SELECT_REQ:
 
                     conn.send(
                         self.build_reject_req(
                             recv_msg,
                             secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
-                
-        except secs.HsmsSsCommunicatorError as e:
-            self._put_error(e)
-        except secs.HsmsSsSendMessageError as e:
-            self._put_error(e)
+
+                elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
+                    or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
+
+                    conn.send(
+                        self.build_reject_req(
+                            recv_msg,
+                            secs.HsmsSsRejectReason.TRANSACTION_NOT_OPEN))
+
+                elif ctrl_type == secs.HsmsSsControlType.REJECT_REQ:
+
+                    # Nothing
+                    pass
+
+                else:
+
+                    if secs.HsmsSsControlType.has_s_type(msg.get_s_type()):
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_P))
+
+                    else:
+
+                        conn.send(
+                            self.build_reject_req(
+                                recv_msg,
+                                secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
+                    
+            except secs.HsmsSsSendMessageError as e:
+                self._put_error(e)
+            except secs.HsmsSsWaitReplyMessageError as e:
+                self._put_error(e)
+            except secs.HsmsSsCommunicatorError as e:
+                self._put_error(e)
+
+        th = threading.Thread(target=_f, daemon=True)
+        try:
+            self.__ths.append(th)
+            th.start()
+        finally:
+            self.__ths.remove(th)
     
     def _close(self):
 
