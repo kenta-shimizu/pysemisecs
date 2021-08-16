@@ -34,8 +34,8 @@ class HsmsSsTimeoutT6Error(HsmsSsWaitReplyMessageError):
 
 class HsmsSsRejectMessageError(HsmsSsWaitReplyMessageError):
 
-    def __init__(self, ref_msg):
-        super(HsmsSsRejectMessageError, self).__init__('Reject', ref_msg)
+    def __init__(self, msg, ref_msg):
+        super(HsmsSsRejectMessageError, self).__init__(msg, ref_msg)
 
 
 class HsmsSsCommunicateState:
@@ -66,7 +66,7 @@ class SendReplyHsmsSsMessagePack:
             return self.__terminated
 
     def get_system_bytes(self):
-        return self.__msg.get_system_bytes()
+        return self.__msg.system_bytes
 
     def put_reply_msg(self, reply_msg):
         with self.__reply_msg_lock:
@@ -117,7 +117,7 @@ class SendReplyHsmsSsMessagePackPool:
 
     def put_reply_msg(self, reply_msg):
         with self.__lock:
-            key = reply_msg.get_system_bytes()
+            key = reply_msg.system_bytes
             if key in self.__pool:
                 self.__pool[key].put_reply_msg(reply_msg)
                 return True
@@ -128,11 +128,11 @@ class SendReplyHsmsSsMessagePackPool:
 class HsmsSsConnection:
     
     def __init__(
-        self, sock, comm,
-        recv_primary_msg_put_callback,
-        recv_all_msg_put_callback,
-        sended_msg_put_callback,
-        error_put_callback):
+            self, sock, comm,
+            recv_primary_msg_put_callback,
+            recv_all_msg_put_callback,
+            sended_msg_put_callback,
+            error_put_callback):
 
         self.__sock = sock
         self.__comm = comm
@@ -273,10 +273,11 @@ class HsmsSsConnection:
                 timeout_tx = self.__comm.timeout_t3
 
         elif (ctrl_type == secs.HsmsSsControlType.SELECT_REQ
-            or ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ):
+              or ctrl_type == secs.HsmsSsControlType.LINKTEST_REQ):
+
             timeout_tx = self.__comm.timeout_t6
 
-        def _send(msg):
+        def _send():
             with self.__send_lock:
                 try:
                     self.__sock.sendall(msg.to_bytes())
@@ -291,7 +292,7 @@ class HsmsSsConnection:
             try:
                 self.__send_reply_pool.entry(pack)
 
-                _send(msg)
+                _send()
 
                 rsp = pack.wait_reply_msg(timeout_tx)
 
@@ -324,7 +325,7 @@ class HsmsSsConnection:
                 self.__send_reply_pool.remove(pack)
             
         else:
-            _send(msg)
+            _send()
             return None
 
 
@@ -344,9 +345,9 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         self.__sended_msg_putter = secs.CallbackQueuing(self._put_sended_msg)
         self.__error_putter = secs.CallbackQueuing(super()._put_error)
 
-        hsmssscomml = kwargs.get('hsmsss_communicate', None)
-        if hsmssscomml is not None:
-            self.add_hsmsss_communicate_listener(hsmssscomml)
+        hsmsss_comm_lstnr = kwargs.get('hsmsss_communicate', None)
+        if hsmsss_comm_lstnr is not None:
+            self.add_hsmsss_communicate_listener(hsmsss_comm_lstnr)
 
     def __str__(self):
         ipaddr = self._get_ipaddress()
@@ -409,8 +410,6 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
             if self.is_open:
                 raise RuntimeError("Already opened")
 
-        # TODO
-
         self._set_opened()
     
     def _close(self):
@@ -468,7 +467,8 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         return secs.HsmsSsControlMessage.build_select_request(
             self._create_system_bytes())
 
-    def build_select_rsp(self, primary, status):
+    @staticmethod
+    def build_select_rsp(primary, status):
         return secs.HsmsSsControlMessage.build_select_response(
             primary,
             status)
@@ -477,14 +477,13 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         return secs.HsmsSsControlMessage.build_linktest_request(
             self._create_system_bytes())
 
-    def build_linktest_rsp(self, primary):
-        return secs.HsmsSsControlMessage.build_linktest_response(
-            primary)
+    @staticmethod
+    def build_linktest_rsp(primary):
+        return secs.HsmsSsControlMessage.build_linktest_response(primary)
 
-    def build_reject_req(self, primary, reason):
-        return secs.HsmsSsControlMessage.build_reject_request(
-            primary,
-            reason)
+    @staticmethod
+    def build_reject_req(primary, reason):
+        return secs.HsmsSsControlMessage.build_reject_request(primary, reason)
 
     def build_separate_req(self):
         return secs.HsmsSsControlMessage.build_separate_request(
@@ -495,11 +494,11 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
         return self.send_hsmsss_msg(msg)
 
     def send_select_rsp(self, primary, status):
-        msg = self.build_select_rsp(self, primary, status)
+        msg = self.build_select_rsp(primary, status)
         return self.send_hsmsss_msg(msg)
 
     def send_linktest_req(self):
-        msg = self.build_linktest_req(self)
+        msg = self.build_linktest_req()
         return self.send_hsmsss_msg(msg)
 
     def send_linktest_rsp(self, primary):

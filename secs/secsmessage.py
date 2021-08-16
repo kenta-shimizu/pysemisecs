@@ -114,15 +114,28 @@ class SecsMessage:
         # prototype
         raise NotImplementedError()
 
-    def get_system_bytes(self):
+    @property
+    def system_bytes(self):
+        pass
+
+    @system_bytes.getter
+    def system_bytes(self):
         return (self._header10bytes())[6:10]
+
+    @property
+    def header10bytes(self):
+        pass
+
+    @header10bytes.getter
+    def header10bytes(self):
+        return self._header10bytes()
 
     def _header10bytes(self):
         # prototype
         # return bytes(10)
         raise NotImplementedError()
 
-    def _header10bytes_str(self):
+    def get_header10bytes_str(self):
 
         if self.__cache_header10bytes_str is None:
 

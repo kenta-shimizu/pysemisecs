@@ -245,7 +245,7 @@ class Gem:
 
         try:
             return Clock.from_ascii(s2b)
-        except secs.Secs2BodyParseError as e:
+        except secs.Secs2BodyParseError:
             raise secs.Secs2BodyParseError("S2F18 not time")
 
     def s2f18_now(self, primary_msg):
@@ -288,7 +288,7 @@ class Gem:
     def __s9fy(self, ref_msg, func):
         return self._comm.send(
             9, func, False,
-            ('B', ref_msg._header10bytes())
+            ('B', ref_msg.header10bytes)
         )
 
     def s9f1(self, ref_msg):

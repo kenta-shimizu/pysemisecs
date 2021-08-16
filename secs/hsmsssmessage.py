@@ -45,7 +45,7 @@ class HsmsSsControlType:
         return False
 
 
-class HsmsSsSelectStatus():
+class HsmsSsSelectStatus:
 
     UNKNOWN = 0xFF
 
@@ -69,7 +69,7 @@ class HsmsSsSelectStatus():
         return cls.UNKNOWN
 
 
-class HsmsSsRejectReason():
+class HsmsSsRejectReason:
 
     UNKNOWN = 0xFF
 
@@ -106,7 +106,7 @@ class HsmsSsMessage(secs.SecsMessage):
 
     def __str__(self):
         if self._cache_str is None:
-            vv = [self._header10bytes_str(), ' length:', str(self._msg_length())]
+            vv = [self.get_header10bytes_str(), ' length:', str(self._msg_length())]
             if self._control_type == HsmsSsControlType.DATA:
                 vv.extend([
                     self._STR_LINESEPARATOR,
@@ -148,6 +148,15 @@ class HsmsSsMessage(secs.SecsMessage):
 
         return self._cache_msg_length
 
+    def _device_id(self):
+        # prototype
+        raise NotImplementedError()
+
+    def _header10bytes(self):
+        # prototype
+        # return bytes(10)
+        raise NotImplementedError()
+
     def get_control_type(self):
         return self._control_type
 
@@ -165,13 +174,13 @@ class HsmsSsMessage(secs.SecsMessage):
 
     def to_bytes(self):
         if self._cache_bytes is None:
-            msglen = self._msg_length()
+            msg_len = self._msg_length()
             vv = [
                 bytes([
-                    (msglen >> 24) & 0xFF,
-                    (msglen >> 16) & 0xFF,
-                    (msglen >> 8) & 0xFF,
-                    msglen & 0xFF
+                    (msg_len >> 24) & 0xFF,
+                    (msg_len >> 16) & 0xFF,
+                    (msg_len >> 8) & 0xFF,
+                    msg_len & 0xFF
                 ]),
                 self._header10bytes(),
                 b'' if self.secs2body is None else self.secs2body.to_bytes()
@@ -183,26 +192,26 @@ class HsmsSsMessage(secs.SecsMessage):
     def from_bytes(cls, bs):
 
         h10bs = bs[4:14]
-        sysbs = h10bs[6:10]
+        sys_bs = h10bs[6:10]
 
         ctrl_type = HsmsSsControlType.get(h10bs[4:6])
 
         if ctrl_type == HsmsSsControlType.DATA:
 
-            devid = (h10bs[0] << 8) | h10bs[1]
+            dev_id = (h10bs[0] << 8) | h10bs[1]
             strm = h10bs[2] & 0x7F
             func = h10bs[3]
             wbit = (h10bs[2] & 0x80) == 0x80
 
             if len(bs) > 14:
                 s2b = secs.Secs2BodyBuilder.from_body_bytes(bs[14:])
-                v = HsmsSsDataMessage(strm, func, wbit, s2b, sysbs, devid)
+                v = HsmsSsDataMessage(strm, func, wbit, s2b, sys_bs, dev_id)
             else:
-                v = HsmsSsDataMessage(strm, func, wbit, None, sysbs, devid)
+                v = HsmsSsDataMessage(strm, func, wbit, None, sys_bs, dev_id)
             
         else:
 
-            v = HsmsSsControlMessage(sysbs, ctrl_type)
+            v = HsmsSsControlMessage(sys_bs, ctrl_type)
             v._p_type = h10bs[2]
             v._s_type = h10bs[3]
 
@@ -217,14 +226,15 @@ class HsmsSsDataMessage(HsmsSsMessage):
     def __init__(self, strm, func, wbit, secs2body, system_bytes, session_id):
         super(HsmsSsDataMessage, self).__init__(strm, func, wbit, secs2body, system_bytes, HsmsSsControlType.DATA)
         self.__session_id = session_id
-        self._cache_header10bytes = None
+        self.__cache_header10bytes = None
 
     def _header10bytes(self):
-        if self._cache_header10bytes is None:
+        if self.__cache_header10bytes is None:
             b2 = self.strm
             if self.wbit:
                 b2 |= 0x80
-            self._cache_header10bytes = bytes([
+
+            self.__cache_header10bytes = bytes([
                 (self.session_id >> 8) & 0x7F,
                 self.session_id & 0xFF,
                 b2, self.func,
@@ -233,7 +243,7 @@ class HsmsSsDataMessage(HsmsSsMessage):
                 self._system_bytes[2], self._system_bytes[3]
                 ])
         
-        return self._cache_header10bytes
+        return self.__cache_header10bytes
 
     @property
     def session_id(self):
@@ -251,7 +261,7 @@ class HsmsSsControlMessage(HsmsSsMessage):
 
     def __init__(self, system_bytes, control_type):
         super(HsmsSsControlMessage, self).__init__(0, 0, False, None, system_bytes, control_type)
-        self._cache_header10bytes = None
+        self.__cache_header10bytes = None
 
     CONTROL_DEVICE_ID = -1
 
@@ -259,8 +269,8 @@ class HsmsSsControlMessage(HsmsSsMessage):
         return self.CONTROL_DEVICE_ID
 
     def _header10bytes(self):
-        if self._cache_header10bytes is None:
-            self._cache_header10bytes = bytes([
+        if self.__cache_header10bytes is None:
+            self.__cache_header10bytes = bytes([
                 0xFF, 0xFF,
                 0x00, 0x00,
                 self._control_type[0], self._control_type[1],
@@ -268,7 +278,7 @@ class HsmsSsControlMessage(HsmsSsMessage):
                 self._system_bytes[2], self._system_bytes[3]
                 ])
         
-        return self._cache_header10bytes
+        return self.__cache_header10bytes
 
     @classmethod
     def build_select_request(cls, system_bytes):
@@ -277,7 +287,7 @@ class HsmsSsControlMessage(HsmsSsMessage):
     @classmethod
     def build_select_response(cls, primary_msg, select_status):
         ctrl_type = HsmsSsControlType.SELECT_RSP
-        sys_bytes = (primary_msg._header10bytes())[6:10]
+        sys_bytes = primary_msg.system_bytes
         r = HsmsSsControlMessage(sys_bytes, ctrl_type)
         r._cache_header10bytes = bytes([
             0xFF, 0xFF,
@@ -295,13 +305,13 @@ class HsmsSsControlMessage(HsmsSsMessage):
     @classmethod
     def build_linktest_response(cls, primary_msg):
         return HsmsSsControlMessage(
-            (primary_msg._header10bytes())[6:10],
+            primary_msg.system_bytes,
             HsmsSsControlType.LINKTEST_RSP)
 
     @classmethod
     def build_reject_request(cls, primary_msg, reject_reason):
         ctrl_type = HsmsSsControlType.REJECT_REQ
-        h10bytes = primary_msg._header10bytes()
+        h10bytes = primary_msg.header10bytes
         b2 = h10bytes[4] if reject_reason == HsmsSsRejectReason.NOT_SUPPORT_TYPE_P else h10bytes[5]
         sys_bytes = h10bytes[6:10]
         r = HsmsSsControlMessage(sys_bytes, ctrl_type)

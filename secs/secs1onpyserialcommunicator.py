@@ -2,6 +2,7 @@ import threading
 import importlib
 import secs
 
+
 class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
 
     __DEFAULT_REOPEN = 5.0
@@ -95,9 +96,9 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
             
             try:
                 serial = importlib.import_module('serial')
-            except ModuleNotFoundError as e:
+            except ModuleNotFoundError as ex:
                 print("Secs1OnPySerialCommunicator require 'pySerial'")
-                raise e
+                raise ex
 
             def _f():
                 cdt = threading.Condition()
@@ -141,9 +142,9 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
                             finally:
                                 try:
                                     ser.close()
-                                except Exception as e:
+                                except Exception as ee:
                                     if not self.is_closed:
-                                        self._put_error(e)
+                                        self._put_error(ee)
 
                         except Exception as e:
                             if not self.is_closed:

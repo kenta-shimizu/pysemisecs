@@ -1,10 +1,10 @@
+import struct
+import threading
+import os
 import importlib
 import socket
 import re
-import os
 import datetime
-import threading
-import struct
 
 
 class Secs2BodyParseError(Exception):
@@ -30,17 +30,17 @@ class AbstractSecs2Body:
     def __init__(self, item_type, value):
         self._type = item_type
         self._value = value
-        self._cache_sml = None
-        self._cache_repr = None
-        self._cache_bytes = None
+        self.__cache_sml = None
+        self.__cache_repr = None
+        self.__cache_bytes = None
 
     def __str__(self):
         return self.to_sml()
 
     def __repr__(self):
-        if self._cache_repr is None:
-            self._cache_repr = str((self._type[0], self._value))
-        return self._cache_repr
+        if self.__cache_repr is None:
+            self.__cache_repr = str((self._type[0], self._value))
+        return self.__cache_repr
 
     def __len__(self):
         return len(self._value)
@@ -136,9 +136,9 @@ class AbstractSecs2Body:
         Returns:
             str: SML
         """
-        if self._cache_sml is None:
-            self._cache_sml = self._create_to_sml()
-        return self._cache_sml
+        if self.__cache_sml is None:
+            self.__cache_sml = self._create_to_sml()
+        return self.__cache_sml
 
     def to_bytes(self):
         """bytes getter.
@@ -146,27 +146,27 @@ class AbstractSecs2Body:
         Returns:
             bytes: bytes
         """
-        if self._cache_bytes is None:
-            self._cache_bytes = self._create_to_bytes()
-        return self._cache_bytes
+        if self.__cache_bytes is None:
+            self.__cache_bytes = self._create_to_bytes()
+        return self.__cache_bytes
 
     def _create_to_sml(self):
         l, v = self._create_to_sml_value()
         return '<' + self._type[0] + ' [' + str(l) + '] ' + str(v) + ' >'
 
     def _create_to_sml_value(self):
-        return (0, '')
+        return 0, ''
 
     def _create_to_bytes(self):
-            bsvv = self._create_to_bytes_value()
-            vlen = len(bsvv)
-            bslen = struct.pack('>L', vlen)
-            if vlen >= self._BYTES_LEN_3:
-                return struct.pack('>B', (self._type[1] | 0x03)) + bslen[1:4] + bsvv
-            elif vlen >= self._BYTES_LEN_2:
-                return struct.pack('>B', (self._type[1] | 0x02)) + bslen[2:4] + bsvv
-            else:
-                return struct.pack('>B', (self._type[1] | 0x01)) + bslen[3:4] + bsvv
+        bs_vv = self._create_to_bytes_value()
+        v_len = len(bs_vv)
+        bs_len = struct.pack('>L', v_len)
+        if v_len >= self._BYTES_LEN_3:
+            return struct.pack('>B', (self._type[1] | 0x03)) + bs_len[1:4] + bs_vv
+        elif v_len >= self._BYTES_LEN_2:
+            return struct.pack('>B', (self._type[1] | 0x02)) + bs_len[2:4] + bs_vv
+        else:
+            return struct.pack('>B', (self._type[1] | 0x01)) + bs_len[3:4] + bs_vv
 
     def _create_to_bytes_value(self):
         return self._value
@@ -185,14 +185,14 @@ class AbstractSecs2Body:
             n -= 1
 
         x = 2**n
-        max = x-1
+        v_max = x-1
 
         if is_signed:
-            min = -x
+            v_min = -x
         else:
-            min = 0
+            v_min = 0
 
-        if v > max or v < min:
+        if v > v_max or v < v_min:
             raise ValueError("value is from " + str(min) + " to " + str(max) + ", value is " + str(v))
 
         return v
@@ -204,7 +204,7 @@ class Secs2AsciiBody(AbstractSecs2Body):
         super(Secs2AsciiBody, self).__init__(item_type, str(value))
 
     def _create_to_sml_value(self):
-        return (len(self._value), '"' + self._value + '"')
+        return len(self._value), ('"' + self._value + '"')
 
     def _create_to_bytes_value(self):
         return self._value.encode(encoding='ascii')
@@ -231,7 +231,7 @@ class Secs2BooleanBody(AbstractSecs2Body):
 
     def _create_to_sml_value(self):
         vv = [("TRUE" if x else "FALSE") for x in self._value]
-        return (len(vv), self._SML_VALUESEPARATOR.join(vv))
+        return len(vv), self._SML_VALUESEPARATOR.join(vv)
 
     def _create_to_bytes_value(self):
         return bytes([(0xFF if v else 0x00) for v in self._value])
@@ -262,7 +262,7 @@ class Secs2BinaryBody(AbstractSecs2Body):
 
     def _create_to_sml_value(self):
         vv = [('0x' + '{:02X}'.format(x)) for x in self._value]
-        return (len(vv), self._SML_VALUESEPARATOR.join(vv))
+        return len(vv), self._SML_VALUESEPARATOR.join(vv)
 
     @staticmethod
     def build(item_type, value):
@@ -276,7 +276,7 @@ class AbstractSecs2NumberBody(AbstractSecs2Body):
 
     def _create_to_sml_value(self):
         vv = [str(x) for x in self._value]
-        return (len(vv), self._SML_VALUESEPARATOR.join(vv))
+        return len(vv), self._SML_VALUESEPARATOR.join(vv)
 
     def _create_to_bytes_value(self):
         return b''.join([struct.pack(('>' + self._type[3]), x) for x in self._value])
@@ -346,8 +346,8 @@ class Secs2ListBody(AbstractSecs2Body):
             vv = list()
             vv.append(level + '<L [' + str(len(value)) + ']')
             for x in value:
-                if x._type[0] == 'L':
-                    vv.append(_lsf(x._value, deep_level))
+                if x.type == 'L':
+                    vv.append(_lsf(x.value, deep_level))
                 else:
                     vv.append(deep_level + x.to_sml())
             vv.append(level + '>')
@@ -356,15 +356,15 @@ class Secs2ListBody(AbstractSecs2Body):
         return _lsf(self._value)
 
     def _create_to_bytes(self):
-        vlen = len(self._value)
-        bslen = struct.pack('>L', vlen)
-        bsvv = b''.join([x.to_bytes() for x in self._value])
-        if vlen >= self._BYTES_LEN_3:
-            return struct.pack('>B', (self._type[1] | 0x03)) + bslen[1:4] + bsvv
-        elif vlen >= self._BYTES_LEN_2:
-            return struct.pack('>B', (self._type[1] | 0x02)) + bslen[2:4] + bsvv
+        v_len = len(self._value)
+        bs_len = struct.pack('>L', v_len)
+        bs_vv = b''.join([x.to_bytes() for x in self._value])
+        if v_len >= self._BYTES_LEN_3:
+            return struct.pack('>B', (self._type[1] | 0x03)) + bs_len[1:4] + bs_vv
+        elif v_len >= self._BYTES_LEN_2:
+            return struct.pack('>B', (self._type[1] | 0x02)) + bs_len[2:4] + bs_vv
         else:
-            return struct.pack('>B', (self._type[1] | 0x01)) + bslen[3:4] + bsvv
+            return struct.pack('>B', (self._type[1] | 0x01)) + bs_len[3:4] + bs_vv
 
     @staticmethod
     def build(item_type, value):
@@ -432,13 +432,13 @@ class Secs2BodyBuilder:
             len_bit = b & 0x3
 
             if len_bit == 3:
-                lenbs = (bs[pos+1] << 16) | (bs[pos+2] << 8) | bs[pos+3]
+                len_bs = (bs[pos+1] << 16) | (bs[pos+2] << 8) | bs[pos+3]
             elif len_bit == 2:
-                lenbs = (bs[pos+1] << 8) | bs[pos+2]
+                len_bs = (bs[pos+1] << 8) | bs[pos+2]
             else:
-                lenbs = bs[pos+1]
+                len_bs = bs[pos+1]
 
-            return (t, lenbs, (len_bit + 1))
+            return t, len_bs, (len_bit + 1)
 
         def _f(bs, pos):
 
@@ -453,19 +453,19 @@ class Secs2BodyBuilder:
                 for _ in range(r[1]):
                     v, p = _f(bs, p)
                     vv.append(v)
-                return (tt[5](tt, vv), p)
+                return tt[5](tt, vv), p
 
             elif tt[0] == 'BOOLEAN':
                 vv = [(b != 0x00) for b in bs[start_index:end_index]]
-                return (tt[5](tt, vv), end_index)
+                return tt[5](tt, vv), end_index
 
             elif tt[0] == 'A':
                 v = bs[start_index:end_index].decode(encoding='ascii')
-                return (tt[5](tt, v), end_index)
+                return tt[5](tt, v), end_index
 
             elif tt[0] == 'B':
                 vv = bs[start_index:end_index]
-                return (tt[5](tt, vv), end_index)
+                return tt[5](tt, vv), end_index
 
             elif tt[0] in ('I1', 'I2', 'I4', 'I8', 'F8', 'F4', 'U1', 'U2', 'U4', 'U8'):
                 vv = list()
@@ -475,20 +475,20 @@ class Secs2BodyBuilder:
                     p += tt[2]
                     v = struct.unpack(('>' + tt[3]), bs[prev:p])
                     vv.append(v[0])
-                return (tt[5](tt, vv), end_index)
+                return tt[5](tt, vv), end_index
 
         try:
             if len(body_bytes) == 0:
                 return None
 
-            r, p = _f(body_bytes, 0)
-            length = len(body_bytes)
+            lr, lp = _f(body_bytes, 0)
+            len_body = len(body_bytes)
 
-            if p == length:
-                r._cache_bytes = bytes(body_bytes)
-                return r
+            if lp == len_body:
+                lr._cache_bytes = bytes(body_bytes)
+                return lr
             else:
-                raise Secs2BodyBytesParseError("not reach bytes end, reach=" + str(p) + ", length=" + str(length))
+                raise Secs2BodyBytesParseError("not reach bytes end, reach=" + str(lp) + ", length=" + str(len_body))
 
         except ValueError as e:
             raise Secs2BodyBytesParseError(e)
@@ -566,10 +566,10 @@ class SmlParser:
                     for a in args:
                         if type(a) is str:
                             if v == a:
-                                return (v, p)
+                                return v, p
                         else:
                             if a(v):
-                                return (v, p)
+                                return v, p
                     p += 1
             else:
                 while True:
@@ -577,26 +577,26 @@ class SmlParser:
                     if _is_ws(v):
                         p += 1
                     else:
-                        return (v, p)
+                        return v, p
 
-        def _ssbkt(s, from_pos):    # seek size_start_blacket'[' position, return position, -1 if not exist
+        def _ssbkt(s, from_pos):    # seek size_start_bracket'[' position, return position, -1 if not exist
             v, p = _seek_next(s, from_pos)
             return p if v == '[' else -1
 
-        def _sebkt(s, from_pos):    # seek size_end_blacket']' position, return position
+        def _sebkt(s, from_pos):    # seek size_end_bracket']' position, return position
             return (_seek_next(s, from_pos, ']'))[1]
 
-        def _isbkt(s, from_pos):    # seek item_start_blacket'<' position, return position, -1 if not exist
+        def _isbkt(s, from_pos):    # seek item_start_bracket'<' position, return position, -1 if not exist
             v, p = _seek_next(s, from_pos)
             return p if v == '<' else -1
 
-        def _iebkt(s, from_pos):    # seek item_end_blacket'>' position, return position
+        def _iebkt(s, from_pos):    # seek item_end_bracket'>' position, return position
             return (_seek_next(s, from_pos, '>'))[1]
 
         def _seek_item(s, from_pos):  # seek item_type, return (item_type, shifted_position)
             p_start = (_seek_next(s, from_pos))[1]
             p_end = (_seek_next(s, (p_start + 1), '[', '"', '<', '>', _is_ws))[1]
-            return (Secs2BodyBuilder.get_item_type_from_sml(s[p_start:p_end]), p_end)
+            return Secs2BodyBuilder.get_item_type_from_sml(s[p_start:p_end]), p_end
 
         def _f(s, from_pos):
 
@@ -616,7 +616,7 @@ class SmlParser:
                 while True:
                     v, p = _seek_next(s, p)
                     if v == '>':
-                        return (tt[5](tt, vv), (p + 1))
+                        return tt[5](tt, vv), (p + 1)
 
                     elif v == '<':
                         r, p = _f(s, p)
@@ -635,15 +635,15 @@ class SmlParser:
                     elif ux == 'FALSE' or ux == 'F':
                         vv.append(False)
                     else:
-                        raise Secs2BodySmlParseError("Not accept, BOOELAN require TRUE or FALSE")
-                return (tt[5](tt, vv), (r + 1))
+                        raise Secs2BodySmlParseError("Not accept, BOOLEAN require TRUE or FALSE")
+                return tt[5](tt, vv), (r + 1)
 
             elif tt[0] == 'A':
                 vv = list()
                 while True:
                     v, p_start = _seek_next(s, p)
                     if v == '>':
-                        return (tt[5](tt, ''.join(vv)), (p_start + 1))
+                        return tt[5](tt, ''.join(vv)), (p_start + 1)
 
                     elif v == '"':
                         v, p_end = _seek_next(s, (p_start + 1), '"')
@@ -661,17 +661,17 @@ class SmlParser:
 
             elif tt[0] in ('B', 'I1', 'I2', 'I4', 'I8', 'F4', 'F8', 'U1', 'U2', 'U4', 'U8'):
                 r = _iebkt(s, p)
-                return (tt[5](tt, s[p:r].strip().split()), (r + 1))
+                return tt[5](tt, s[p:r].strip().split()), (r + 1)
 
         try:
             if sml_str is None:
                 raise Secs2BodySmlParseError("Not accept None")
 
             ss = str(sml_str).strip()
-            r, p = _f(ss, 0)
-            if len(ss[p:]) > 0:
-                raise Secs2BodySmlParseError("Not reach end, end=" + str(p) + ", length=" + str(len(ss)))
-            return r
+            lr, lp = _f(ss, 0)
+            if len(ss[lp:]) > 0:
+                raise Secs2BodySmlParseError("Not reach end, end=" + str(lp) + ", length=" + str(len(ss)))
+            return lr
 
         except TypeError as e:
             raise Secs2BodySmlParseError(str(e))
@@ -794,15 +794,28 @@ class SecsMessage:
         # prototype
         raise NotImplementedError()
 
-    def get_system_bytes(self):
+    @property
+    def system_bytes(self):
+        pass
+
+    @system_bytes.getter
+    def system_bytes(self):
         return (self._header10bytes())[6:10]
+
+    @property
+    def header10bytes(self):
+        pass
+
+    @header10bytes.getter
+    def header10bytes(self):
+        return self._header10bytes()
 
     def _header10bytes(self):
         # prototype
         # return bytes(10)
         raise NotImplementedError()
 
-    def _header10bytes_str(self):
+    def get_header10bytes_str(self):
 
         if self.__cache_header10bytes_str is None:
 
@@ -867,7 +880,7 @@ class HsmsSsControlType:
         return False
 
 
-class HsmsSsSelectStatus():
+class HsmsSsSelectStatus:
 
     UNKNOWN = 0xFF
 
@@ -891,7 +904,7 @@ class HsmsSsSelectStatus():
         return cls.UNKNOWN
 
 
-class HsmsSsRejectReason():
+class HsmsSsRejectReason:
 
     UNKNOWN = 0xFF
 
@@ -928,7 +941,7 @@ class HsmsSsMessage(SecsMessage):
 
     def __str__(self):
         if self._cache_str is None:
-            vv = [self._header10bytes_str(), ' length:', str(self._msg_length())]
+            vv = [self.get_header10bytes_str(), ' length:', str(self._msg_length())]
             if self._control_type == HsmsSsControlType.DATA:
                 vv.extend([
                     self._STR_LINESEPARATOR,
@@ -970,6 +983,15 @@ class HsmsSsMessage(SecsMessage):
 
         return self._cache_msg_length
 
+    def _device_id(self):
+        # prototype
+        raise NotImplementedError()
+
+    def _header10bytes(self):
+        # prototype
+        # return bytes(10)
+        raise NotImplementedError()
+
     def get_control_type(self):
         return self._control_type
 
@@ -987,13 +1009,13 @@ class HsmsSsMessage(SecsMessage):
 
     def to_bytes(self):
         if self._cache_bytes is None:
-            msglen = self._msg_length()
+            msg_len = self._msg_length()
             vv = [
                 bytes([
-                    (msglen >> 24) & 0xFF,
-                    (msglen >> 16) & 0xFF,
-                    (msglen >> 8) & 0xFF,
-                    msglen & 0xFF
+                    (msg_len >> 24) & 0xFF,
+                    (msg_len >> 16) & 0xFF,
+                    (msg_len >> 8) & 0xFF,
+                    msg_len & 0xFF
                 ]),
                 self._header10bytes(),
                 b'' if self.secs2body is None else self.secs2body.to_bytes()
@@ -1005,26 +1027,26 @@ class HsmsSsMessage(SecsMessage):
     def from_bytes(cls, bs):
 
         h10bs = bs[4:14]
-        sysbs = h10bs[6:10]
+        sys_bs = h10bs[6:10]
 
         ctrl_type = HsmsSsControlType.get(h10bs[4:6])
 
         if ctrl_type == HsmsSsControlType.DATA:
 
-            devid = (h10bs[0] << 8) | h10bs[1]
+            dev_id = (h10bs[0] << 8) | h10bs[1]
             strm = h10bs[2] & 0x7F
             func = h10bs[3]
             wbit = (h10bs[2] & 0x80) == 0x80
 
             if len(bs) > 14:
                 s2b = Secs2BodyBuilder.from_body_bytes(bs[14:])
-                v = HsmsSsDataMessage(strm, func, wbit, s2b, sysbs, devid)
+                v = HsmsSsDataMessage(strm, func, wbit, s2b, sys_bs, dev_id)
             else:
-                v = HsmsSsDataMessage(strm, func, wbit, None, sysbs, devid)
+                v = HsmsSsDataMessage(strm, func, wbit, None, sys_bs, dev_id)
 
         else:
 
-            v = HsmsSsControlMessage(sysbs, ctrl_type)
+            v = HsmsSsControlMessage(sys_bs, ctrl_type)
             v._p_type = h10bs[2]
             v._s_type = h10bs[3]
 
@@ -1039,14 +1061,15 @@ class HsmsSsDataMessage(HsmsSsMessage):
     def __init__(self, strm, func, wbit, secs2body, system_bytes, session_id):
         super(HsmsSsDataMessage, self).__init__(strm, func, wbit, secs2body, system_bytes, HsmsSsControlType.DATA)
         self.__session_id = session_id
-        self._cache_header10bytes = None
+        self.__cache_header10bytes = None
 
     def _header10bytes(self):
-        if self._cache_header10bytes is None:
+        if self.__cache_header10bytes is None:
             b2 = self.strm
             if self.wbit:
                 b2 |= 0x80
-            self._cache_header10bytes = bytes([
+
+            self.__cache_header10bytes = bytes([
                 (self.session_id >> 8) & 0x7F,
                 self.session_id & 0xFF,
                 b2, self.func,
@@ -1055,7 +1078,7 @@ class HsmsSsDataMessage(HsmsSsMessage):
                 self._system_bytes[2], self._system_bytes[3]
                 ])
 
-        return self._cache_header10bytes
+        return self.__cache_header10bytes
 
     @property
     def session_id(self):
@@ -1073,7 +1096,7 @@ class HsmsSsControlMessage(HsmsSsMessage):
 
     def __init__(self, system_bytes, control_type):
         super(HsmsSsControlMessage, self).__init__(0, 0, False, None, system_bytes, control_type)
-        self._cache_header10bytes = None
+        self.__cache_header10bytes = None
 
     CONTROL_DEVICE_ID = -1
 
@@ -1081,8 +1104,8 @@ class HsmsSsControlMessage(HsmsSsMessage):
         return self.CONTROL_DEVICE_ID
 
     def _header10bytes(self):
-        if self._cache_header10bytes is None:
-            self._cache_header10bytes = bytes([
+        if self.__cache_header10bytes is None:
+            self.__cache_header10bytes = bytes([
                 0xFF, 0xFF,
                 0x00, 0x00,
                 self._control_type[0], self._control_type[1],
@@ -1090,7 +1113,7 @@ class HsmsSsControlMessage(HsmsSsMessage):
                 self._system_bytes[2], self._system_bytes[3]
                 ])
 
-        return self._cache_header10bytes
+        return self.__cache_header10bytes
 
     @classmethod
     def build_select_request(cls, system_bytes):
@@ -1099,7 +1122,7 @@ class HsmsSsControlMessage(HsmsSsMessage):
     @classmethod
     def build_select_response(cls, primary_msg, select_status):
         ctrl_type = HsmsSsControlType.SELECT_RSP
-        sys_bytes = (primary_msg._header10bytes())[6:10]
+        sys_bytes = primary_msg.system_bytes
         r = HsmsSsControlMessage(sys_bytes, ctrl_type)
         r._cache_header10bytes = bytes([
             0xFF, 0xFF,
@@ -1117,13 +1140,13 @@ class HsmsSsControlMessage(HsmsSsMessage):
     @classmethod
     def build_linktest_response(cls, primary_msg):
         return HsmsSsControlMessage(
-            (primary_msg._header10bytes())[6:10],
+            primary_msg.system_bytes,
             HsmsSsControlType.LINKTEST_RSP)
 
     @classmethod
     def build_reject_request(cls, primary_msg, reject_reason):
         ctrl_type = HsmsSsControlType.REJECT_REQ
-        h10bytes = primary_msg._header10bytes()
+        h10bytes = primary_msg.header10bytes
         b2 = h10bytes[4] if reject_reason == HsmsSsRejectReason.NOT_SUPPORT_TYPE_P else h10bytes[5]
         sys_bytes = h10bytes[6:10]
         r = HsmsSsControlMessage(sys_bytes, ctrl_type)
@@ -1162,7 +1185,7 @@ class Secs1Message(SecsMessage):
     def __str__(self):
         if self.__cache_str is None:
             vv = [
-                self._header10bytes_str(),
+                self.get_header10bytes_str(),
                 self._STR_LINESEPARATOR,
                 'S', str(self.strm),
                 'F', str(self.func)
@@ -1250,9 +1273,9 @@ class Secs1Message(SecsMessage):
 
             h10bs = self._header10bytes()
             if self.secs2body is None:
-                bodybs = bytes()
+                body_bs = bytes()
             else:
-                bodybs = self.secs2body.to_bytes()
+                body_bs = self.secs2body.to_bytes()
 
             blocks = []
             pos = 0
@@ -1264,7 +1287,7 @@ class Secs1Message(SecsMessage):
                 if block_num > 0x7FFF:
                     raise Secs1MessageParseError("blocks overflow")
 
-                bb, shift, ebit = _bb(bodybs, pos)
+                bb, shift, ebit = _bb(body_bs, pos)
                 hh = _hh(h10bs, block_num, ebit)
                 ss = _sum(hh, bb)
 
@@ -1308,34 +1331,34 @@ class Secs1Message(SecsMessage):
 class Secs1MessageBlock:
 
     def __init__(self, block_bytes):
-        self._bytes = block_bytes
-        self._cache_str = None
-        self._cache_repr = None
+        self.__bytes = block_bytes
+        self.__cache_str = None
+        self.__cache_repr = None
 
     def __str__(self):
-        if self._cache_str is None:
+        if self.__cache_str is None:
             self._cache_str = (
-                '[' + '{:02X}'.format(self._bytes[1])
-                + ' ' + '{:02X}'.format(self._bytes[2])
-                + '|' + '{:02X}'.format(self._bytes[3])
-                + ' ' + '{:02X}'.format(self._bytes[4])
-                + '|' + '{:02X}'.format(self._bytes[5])
-                + ' ' + '{:02X}'.format(self._bytes[6])
-                + '|' + '{:02X}'.format(self._bytes[7])
-                + ' ' + '{:02X}'.format(self._bytes[8])
-                + ' ' + '{:02X}'.format(self._bytes[9])
-                + ' ' + '{:02X}'.format(self._bytes[10])
-                + '] length: ' + str(self._bytes[0])
+                '[' + '{:02X}'.format(self.__bytes[1])
+                + ' ' + '{:02X}'.format(self.__bytes[2])
+                + '|' + '{:02X}'.format(self.__bytes[3])
+                + ' ' + '{:02X}'.format(self.__bytes[4])
+                + '|' + '{:02X}'.format(self.__bytes[5])
+                + ' ' + '{:02X}'.format(self.__bytes[6])
+                + '|' + '{:02X}'.format(self.__bytes[7])
+                + ' ' + '{:02X}'.format(self.__bytes[8])
+                + ' ' + '{:02X}'.format(self.__bytes[9])
+                + ' ' + '{:02X}'.format(self.__bytes[10])
+                + '] length: ' + str(self.__bytes[0])
                 )
         return self._cache_str
 
     def __repr__(self):
-        if self._cache_repr is None:
-            self._cache_repr = str(self._bytes)
-        return self._cache_repr
+        if self.__cache_repr is None:
+            self.__cache_repr = str(self.__bytes)
+        return self.__cache_repr
 
     def to_bytes(self):
-        return self._bytes
+        return self.__bytes
 
     @property
     def device_id(self):
@@ -1348,7 +1371,7 @@ class Secs1MessageBlock:
         Returns:
             int: Device-ID
         """
-        bs = self._bytes[1:3]
+        bs = self.__bytes[1:3]
         return ((bs[0] << 8) & 0x7F00) | bs[1]
 
     @property
@@ -1362,7 +1385,7 @@ class Secs1MessageBlock:
         Returns:
             int: Stream-Number
         """
-        return self._bytes[3] & 0x7F
+        return self.__bytes[3] & 0x7F
 
     @property
     def func(self):
@@ -1375,7 +1398,7 @@ class Secs1MessageBlock:
         Returns:
             int: Function-Number
         """
-        return self._bytes[4]
+        return self.__bytes[4]
 
     @property
     def rbit(self):
@@ -1388,7 +1411,7 @@ class Secs1MessageBlock:
         Returns:
             bool: True if has R-Bit
         """
-        return (self._bytes[1] & 0x80) == 0x80
+        return (self.__bytes[1] & 0x80) == 0x80
 
     @property
     def wbit(self):
@@ -1401,7 +1424,7 @@ class Secs1MessageBlock:
         Returns:
             bool: True if has W-Bit
         """
-        return (self._bytes[3] & 0x80) == 0x80
+        return (self.__bytes[3] & 0x80) == 0x80
 
     @property
     def ebit(self):
@@ -1414,40 +1437,42 @@ class Secs1MessageBlock:
         Returns:
             bool: True if has E-Bit
         """
-        return (self._bytes[5] & 0x80) == 0x80
+        return (self.__bytes[5] & 0x80) == 0x80
 
     def get_block_number(self):
-        bs = self._bytes[5:7]
+        bs = self.__bytes[5:7]
         return ((bs[0] << 8) & 0x7F00) | bs[1]
 
     def get_system_bytes(self):
-        return self._bytes[7:11]
+        return self.__bytes[7:11]
 
     def is_next_block(self, block):
+        bs = block.to_bytes()
         return (
-            block._bytes[1] == self._bytes[1]
-            and block._bytes[2] == self._bytes[2]
-            and block._bytes[3] == self._bytes[3]
-            and block._bytes[4] == self._bytes[4]
-            and block._bytes[7] == self._bytes[7]
-            and block._bytes[8] == self._bytes[8]
-            and block._bytes[9] == self._bytes[9]
-            and block._bytes[10] == self._bytes[10]
+            bs[1] == self.__bytes[1]
+            and bs[2] == self.__bytes[2]
+            and bs[3] == self.__bytes[3]
+            and bs[4] == self.__bytes[4]
+            and bs[7] == self.__bytes[7]
+            and bs[8] == self.__bytes[8]
+            and bs[9] == self.__bytes[9]
+            and bs[10] == self.__bytes[10]
             and block.get_block_number() == (self.get_block_number() + 1)
         )
 
     def is_same_block(self, block):
+        bs = block.to_bytes()
         return (
-            block._bytes[1] == self._bytes[1]
-            and block._bytes[2] == self._bytes[2]
-            and block._bytes[3] == self._bytes[3]
-            and block._bytes[4] == self._bytes[4]
-            and block._bytes[5] == self._bytes[5]
-            and block._bytes[6] == self._bytes[6]
-            and block._bytes[7] == self._bytes[7]
-            and block._bytes[8] == self._bytes[8]
-            and block._bytes[9] == self._bytes[9]
-            and block._bytes[10] == self._bytes[10]
+            bs[1] == self.__bytes[1]
+            and bs[2] == self.__bytes[2]
+            and bs[3] == self.__bytes[3]
+            and bs[4] == self.__bytes[4]
+            and bs[5] == self.__bytes[5]
+            and bs[6] == self.__bytes[6]
+            and bs[7] == self.__bytes[7]
+            and bs[8] == self.__bytes[8]
+            and bs[9] == self.__bytes[9]
+            and bs[10] == self.__bytes[10]
         )
 
 
@@ -1473,13 +1498,13 @@ class SecsWithReferenceMessageError(SecsCommunicatorError):
     def __str__(self):
         return (self.__class__.__name__ + '('
                 + repr(self._msg) + ','
-                + self._ref_msg._header10bytes_str()
+                + self._ref_msg.get_header10bytes_str()
                 + ')')
 
     def __repr__(self):
         return (self.__class__.__name__ + '('
                 + repr(self._msg) + ','
-                + repr(self._ref_msg._header10bytes())
+                + repr(self._ref_msg.header10bytes)
                 + ')')
 
 
@@ -1604,17 +1629,17 @@ class WaitingQueuing(AbstractQueuing):
 
         def _f(vv, p, m):
             with self._v_lock:
-                vvsize = len(self._vv)
-                if vvsize > 0:
+                vv_size = len(self._vv)
+                if vv_size > 0:
                     r = m - p
-                    if vvsize > r:
+                    if vv_size > r:
                         vv.extend(self._vv[0:r])
                         del self._vv[0:r]
                         return r
                     else:
                         vv.extend(self._vv)
                         self._vv.clear()
-                        return vvsize
+                        return vv_size
                 else:
                     return -1
 
@@ -1686,17 +1711,17 @@ class AbstractSecsCommunicator:
         self.__recv_all_msg_lstnrs = list()
         self.__sended_msg_lstnrs = list()
 
-        rpml = kwargs.get('recv_primary_msg', None)
-        if rpml is not None:
-            self.add_recv_primary_msg_listener(rpml)
+        recv_pri_msg_lstnr = kwargs.get('recv_primary_msg', None)
+        if recv_pri_msg_lstnr is not None:
+            self.add_recv_primary_msg_listener(recv_pri_msg_lstnr)
 
-        errl = kwargs.get('error', None)
-        if errl is not None:
-            self.add_error_listener(errl)
+        err_lstnr = kwargs.get('error', None)
+        if err_lstnr is not None:
+            self.add_error_listener(err_lstnr)
 
-        comml = kwargs.get('communicate', None)
-        if comml is not None:
-            self.add_communicate_listener(comml)
+        comm_lstnr = kwargs.get('communicate', None)
+        if comm_lstnr is not None:
+            self.add_communicate_listener(comm_lstnr)
 
         self.__opened = False
         self.__closed = False
@@ -1782,7 +1807,7 @@ class AbstractSecsCommunicator:
         return self.__name
 
     @staticmethod
-    def _tstx(v):
+    def _try_tx(v):
         """test-set-timeout-tx
 
         Args:
@@ -1826,7 +1851,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t1 = self._tstx(val)
+        self.__timeout_t1 = self._try_tx(val)
 
     @property
     def timeout_t2(self):
@@ -1852,7 +1877,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t2 = self._tstx(val)
+        self.__timeout_t2 = self._try_tx(val)
 
     @property
     def timeout_t3(self):
@@ -1878,7 +1903,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t3 = self._tstx(val)
+        self.__timeout_t3 = self._try_tx(val)
 
     @property
     def timeout_t4(self):
@@ -1904,7 +1929,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t4 = self._tstx(val)
+        self.__timeout_t4 = self._try_tx(val)
 
     @property
     def timeout_t5(self):
@@ -1930,7 +1955,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t5 = self._tstx(val)
+        self.__timeout_t5 = self._try_tx(val)
 
     @property
     def timeout_t6(self):
@@ -1956,7 +1981,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t6 = self._tstx(val)
+        self.__timeout_t6 = self._try_tx(val)
 
     @property
     def timeout_t7(self):
@@ -1982,7 +2007,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t7 = self._tstx(val)
+        self.__timeout_t7 = self._try_tx(val)
 
     @property
     def timeout_t8(self):
@@ -2008,7 +2033,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t8 = self._tstx(val)
+        self.__timeout_t8 = self._try_tx(val)
 
     def open(self):
         """Open communicator
@@ -2164,7 +2189,7 @@ class AbstractSecsCommunicator:
         return self._send(
             strm, func, wbit,
             self._create_secs2body(secs2body),
-            primary.get_system_bytes(),
+            primary.system_bytes,
             self.device_id)
 
     def reply_sml(self, primary, sml_str):
@@ -2237,7 +2262,7 @@ class AbstractSecsCommunicator:
     def add_recv_primary_msg_listener(self, listener):
         self.__recv_primary_msg_lstnrs.append(listener)
 
-    def remove_recv_priary_msg_listener(self, listener):
+    def remove_recv_primary_msg_listener(self, listener):
         self.__recv_primary_msg_lstnrs.remove(listener)
 
     def _put_recv_primary_msg(self, recv_msg):
@@ -2338,8 +2363,8 @@ class HsmsSsTimeoutT6Error(HsmsSsWaitReplyMessageError):
 
 class HsmsSsRejectMessageError(HsmsSsWaitReplyMessageError):
 
-    def __init__(self, ref_msg):
-        super(HsmsSsRejectMessageError, self).__init__('Reject', ref_msg)
+    def __init__(self, msg, ref_msg):
+        super(HsmsSsRejectMessageError, self).__init__(msg, ref_msg)
 
 
 class HsmsSsCommunicateState:
@@ -2370,7 +2395,7 @@ class SendReplyHsmsSsMessagePack:
             return self.__terminated
 
     def get_system_bytes(self):
-        return self.__msg.get_system_bytes()
+        return self.__msg.system_bytes
 
     def put_reply_msg(self, reply_msg):
         with self.__reply_msg_lock:
@@ -2421,7 +2446,7 @@ class SendReplyHsmsSsMessagePackPool:
 
     def put_reply_msg(self, reply_msg):
         with self.__lock:
-            key = reply_msg.get_system_bytes()
+            key = reply_msg.system_bytes
             if key in self.__pool:
                 self.__pool[key].put_reply_msg(reply_msg)
                 return True
@@ -2432,11 +2457,11 @@ class SendReplyHsmsSsMessagePackPool:
 class HsmsSsConnection:
 
     def __init__(
-        self, sock, comm,
-        recv_primary_msg_put_callback,
-        recv_all_msg_put_callback,
-        sended_msg_put_callback,
-        error_put_callback):
+            self, sock, comm,
+            recv_primary_msg_put_callback,
+            recv_all_msg_put_callback,
+            sended_msg_put_callback,
+            error_put_callback):
 
         self.__sock = sock
         self.__comm = comm
@@ -2577,10 +2602,11 @@ class HsmsSsConnection:
                 timeout_tx = self.__comm.timeout_t3
 
         elif (ctrl_type == HsmsSsControlType.SELECT_REQ
-            or ctrl_type == HsmsSsControlType.LINKTEST_REQ):
+              or ctrl_type == HsmsSsControlType.LINKTEST_REQ):
+
             timeout_tx = self.__comm.timeout_t6
 
-        def _send(msg):
+        def _send():
             with self.__send_lock:
                 try:
                     self.__sock.sendall(msg.to_bytes())
@@ -2595,7 +2621,7 @@ class HsmsSsConnection:
             try:
                 self.__send_reply_pool.entry(pack)
 
-                _send(msg)
+                _send()
 
                 rsp = pack.wait_reply_msg(timeout_tx)
 
@@ -2628,7 +2654,7 @@ class HsmsSsConnection:
                 self.__send_reply_pool.remove(pack)
 
         else:
-            _send(msg)
+            _send()
             return None
 
 
@@ -2648,9 +2674,9 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
         self.__sended_msg_putter = CallbackQueuing(self._put_sended_msg)
         self.__error_putter = CallbackQueuing(super()._put_error)
 
-        hsmssscomml = kwargs.get('hsmsss_communicate', None)
-        if hsmssscomml is not None:
-            self.add_hsmsss_communicate_listener(hsmssscomml)
+        hsmsss_comm_lstnr = kwargs.get('hsmsss_communicate', None)
+        if hsmsss_comm_lstnr is not None:
+            self.add_hsmsss_communicate_listener(hsmsss_comm_lstnr)
 
     def __str__(self):
         ipaddr = self._get_ipaddress()
@@ -2713,8 +2739,6 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
             if self.is_open:
                 raise RuntimeError("Already opened")
 
-        # TODO
-
         self._set_opened()
 
     def _close(self):
@@ -2772,7 +2796,8 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
         return HsmsSsControlMessage.build_select_request(
             self._create_system_bytes())
 
-    def build_select_rsp(self, primary, status):
+    @staticmethod
+    def build_select_rsp(primary, status):
         return HsmsSsControlMessage.build_select_response(
             primary,
             status)
@@ -2781,14 +2806,13 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
         return HsmsSsControlMessage.build_linktest_request(
             self._create_system_bytes())
 
-    def build_linktest_rsp(self, primary):
-        return HsmsSsControlMessage.build_linktest_response(
-            primary)
+    @staticmethod
+    def build_linktest_rsp(primary):
+        return HsmsSsControlMessage.build_linktest_response(primary)
 
-    def build_reject_req(self, primary, reason):
-        return HsmsSsControlMessage.build_reject_request(
-            primary,
-            reason)
+    @staticmethod
+    def build_reject_req(primary, reason):
+        return HsmsSsControlMessage.build_reject_request(primary, reason)
 
     def build_separate_req(self):
         return HsmsSsControlMessage.build_separate_request(
@@ -2799,11 +2823,11 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
         return self.send_hsmsss_msg(msg)
 
     def send_select_rsp(self, primary, status):
-        msg = self.build_select_rsp(self, primary, status)
+        msg = self.build_select_rsp(primary, status)
         return self.send_hsmsss_msg(msg)
 
     def send_linktest_req(self):
-        msg = self.build_linktest_req(self)
+        msg = self.build_linktest_req()
         return self.send_hsmsss_msg(msg)
 
     def send_linktest_rsp(self, primary):
@@ -2939,7 +2963,7 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
                             ss = rsp.get_select_status()
 
                             if (ss == HsmsSsSelectStatus.SUCCESS
-                                or ss == HsmsSsSelectStatus.ACTIVED):
+                                    or ss == HsmsSsSelectStatus.ACTIVED):
 
                                 self._set_hsmsss_connection(
                                     conn,
@@ -2956,17 +2980,22 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
 
                         try:
                             sock.shutdown(socket.SHUT_RDWR)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            if not self.is_closed:
+                                self._put_error(e)
 
         except ConnectionError as e:
-            self._put_error(HsmsSsCommunicatorError(e))
+            if not self.is_closed:
+                self._put_error(HsmsSsCommunicatorError(e))
         except HsmsSsCommunicatorError as e:
-            self._put_error(e)
+            if not self.is_closed:
+                self._put_error(e)
         except HsmsSsSendMessageError as e:
-            self._put_error(e)
+            if not self.is_closed:
+                self._put_error(e)
         except HsmsSsWaitReplyMessageError as e:
-            self._put_error(e)
+            if not self.is_closed:
+                self._put_error(e)
 
     def __receiving_msg(self, recv_msg, conn):
 
@@ -3009,7 +3038,7 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
                             HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
 
                 elif (ctrl_type == HsmsSsControlType.SELECT_RSP
-                    or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
+                      or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
 
                     conn.send(
                         self.build_reject_req(
@@ -3023,7 +3052,7 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
 
                 else:
 
-                    if HsmsSsControlType.has_s_type(msg.get_s_type()):
+                    if HsmsSsControlType.has_s_type(recv_msg.get_s_type()):
 
                         conn.send(
                             self.build_reject_req(
@@ -3146,17 +3175,19 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
 
                 def _f():
 
-                    def _f_sock(sock):
-                        with sock:
+                    def _f_sock(s):
+                        with s:
                             try:
-                                self.__accept_socket(sock)
-                            except Exception as e:
-                                self._put_error(e)
+                                self.__accept_socket(s)
+                            except Exception as ea:
+                                if not self.is_closed:
+                                    self._put_error(ea)
                             finally:
                                 try:
-                                    sock.shutdown(socket.SHUT_RDWR)
-                                except Exception:
-                                    pass
+                                    s.shutdown(socket.SHUT_RDWR)
+                                except Exception as eb:
+                                    if self.is_closed:
+                                        self._put_error(eb)
 
                     try:
                         while not self.is_closed:
@@ -3168,9 +3199,9 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                                 daemon=True
                                 ).start()
 
-                    except Exception as e:
+                    except Exception as ee:
                         if not self.is_closed:
-                            self._put_error(HsmsSsCommunicatorError(e))
+                            self._put_error(HsmsSsCommunicatorError(ee))
 
                     finally:
                         with cdt:
@@ -3204,8 +3235,8 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
         try:
             self.__cdts.append(cdt)
 
-            def _put_to_qq(recv_msg, conn):
-                qq.put((recv_msg, conn))
+            def _put_to_qq(recv_msg, c):
+                qq.put((recv_msg, c))
 
             with self._build_hsmsss_connection(sock, _put_to_qq) as conn:
 
@@ -3290,7 +3321,7 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                                 HsmsSsSelectStatus.ALREADY_USED))
 
                 elif (ctrl_type == HsmsSsControlType.SELECT_RSP
-                    or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
+                      or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
 
                     conn.send(
                         self.build_reject_req(
@@ -3362,7 +3393,7 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                             HsmsSsSelectStatus.ACTIVED))
 
                 elif (ctrl_type == HsmsSsControlType.SELECT_RSP
-                    or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
+                      or ctrl_type == HsmsSsControlType.LINKTEST_RSP):
 
                     conn.send(
                         self.build_reject_req(
@@ -3598,18 +3629,18 @@ class Secs1SendReplyPackPool:
     def __get_packs(self, system_bytes):
         with self.__lock:
             return [p for p in self.__packs
-                    if p.secs1msg().get_system_bytes() == system_bytes]
+                    if p.secs1msg().system_bytes == system_bytes]
 
     def sended(self, msg):
-        for p in self.__get_packs(msg.get_system_bytes()):
+        for p in self.__get_packs(msg.system_bytes):
             p.notify_sended()
 
     def raise_except(self, msg, e):
-        for p in self.__get_packs(msg.get_system_bytes()):
+        for p in self.__get_packs(msg.system_bytes):
             p.notify_except(e)
 
     def receive(self, msg):
-        pp = self.__get_packs(msg.get_system_bytes())
+        pp = self.__get_packs(msg.system_bytes)
         if pp:
             for p in pp:
                 p.notify_reply_msg(msg)
@@ -4102,7 +4133,6 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
         return a == b
 
 
-
 class AbstractSecs1OnTcpIpCommunicator(AbstractSecs1Communicator):
 
     def __init__(self, device_id, is_equip, is_master, **kwargs):
@@ -4526,9 +4556,9 @@ class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
 
             try:
                 serial = importlib.import_module('serial')
-            except ModuleNotFoundError as e:
+            except ModuleNotFoundError as ex:
                 print("Secs1OnPySerialCommunicator require 'pySerial'")
-                raise e
+                raise ex
 
             def _f():
                 cdt = threading.Condition()
@@ -4572,9 +4602,9 @@ class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
                             finally:
                                 try:
                                     ser.close()
-                                except Exception as e:
+                                except Exception as ee:
                                     if not self.is_closed:
-                                        self._put_error(e)
+                                        self._put_error(ee)
 
                         except Exception as e:
                             if not self.is_closed:
@@ -4857,7 +4887,7 @@ class Gem:
 
         try:
             return Clock.from_ascii(s2b)
-        except Secs2BodyParseError as e:
+        except Secs2BodyParseError:
             raise Secs2BodyParseError("S2F18 not time")
 
     def s2f18_now(self, primary_msg):
@@ -4900,7 +4930,7 @@ class Gem:
     def __s9fy(self, ref_msg, func):
         return self._comm.send(
             9, func, False,
-            ('B', ref_msg._header10bytes())
+            ('B', ref_msg.header10bytes)
         )
 
     def s9f1(self, ref_msg):
@@ -4996,4 +5026,3 @@ class Gem:
 
 if __name__ == '__main__':
     print('write here')
-

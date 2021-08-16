@@ -85,7 +85,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                             ss = rsp.get_select_status()
 
                             if (ss == secs.HsmsSsSelectStatus.SUCCESS
-                                or ss == secs.HsmsSsSelectStatus.ACTIVED):
+                                    or ss == secs.HsmsSsSelectStatus.ACTIVED):
 
                                 self._set_hsmsss_connection(
                                     conn,
@@ -102,17 +102,22 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                         try:
                             sock.shutdown(socket.SHUT_RDWR)
-                        except Exception:
-                            pass
-                    
+                        except Exception as e:
+                            if not self.is_closed:
+                                self._put_error(e)
+
         except ConnectionError as e:
-            self._put_error(secs.HsmsSsCommunicatorError(e))
+            if not self.is_closed:
+                self._put_error(secs.HsmsSsCommunicatorError(e))
         except secs.HsmsSsCommunicatorError as e:
-            self._put_error(e)
+            if not self.is_closed:
+                self._put_error(e)
         except secs.HsmsSsSendMessageError as e:
-            self._put_error(e)
+            if not self.is_closed:
+                self._put_error(e)
         except secs.HsmsSsWaitReplyMessageError as e:
-            self._put_error(e)
+            if not self.is_closed:
+                self._put_error(e)
     
     def __receiving_msg(self, recv_msg, conn):
 
@@ -155,7 +160,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                             secs.HsmsSsRejectReason.NOT_SUPPORT_TYPE_S))
 
                 elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
-                    or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
+                      or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
 
                     conn.send(
                         self.build_reject_req(
@@ -169,7 +174,7 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                 else:
 
-                    if secs.HsmsSsControlType.has_s_type(msg.get_s_type()):
+                    if secs.HsmsSsControlType.has_s_type(recv_msg.get_s_type()):
 
                         conn.send(
                             self.build_reject_req(

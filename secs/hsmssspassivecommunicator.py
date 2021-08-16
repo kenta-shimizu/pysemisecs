@@ -79,18 +79,20 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
                 def _f():
 
-                    def _f_sock(sock):
-                        with sock:
+                    def _f_sock(s):
+                        with s:
                             try:
-                                self.__accept_socket(sock)
-                            except Exception as e:
-                                self._put_error(e)
+                                self.__accept_socket(s)
+                            except Exception as ea:
+                                if not self.is_closed:
+                                    self._put_error(ea)
                             finally:
                                 try:
-                                    sock.shutdown(socket.SHUT_RDWR)
-                                except Exception:
-                                    pass
-                    
+                                    s.shutdown(socket.SHUT_RDWR)
+                                except Exception as eb:
+                                    if self.is_closed:
+                                        self._put_error(eb)
+
                     try:
                         while not self.is_closed:
                             sock = (server.accept())[0]
@@ -101,9 +103,9 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                                 daemon=True
                                 ).start()
 
-                    except Exception as e:
+                    except Exception as ee:
                         if not self.is_closed:
-                            self._put_error(secs.HsmsSsCommunicatorError(e))
+                            self._put_error(secs.HsmsSsCommunicatorError(ee))
                     
                     finally:
                         with cdt:
@@ -137,8 +139,8 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
         try:
             self.__cdts.append(cdt)
 
-            def _put_to_qq(recv_msg, conn):
-                qq.put((recv_msg, conn))
+            def _put_to_qq(recv_msg, c):
+                qq.put((recv_msg, c))
             
             with self._build_hsmsss_connection(sock, _put_to_qq) as conn:
 
@@ -223,7 +225,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                                 secs.HsmsSsSelectStatus.ALREADY_USED))
                                 
                 elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
-                    or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
+                      or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
 
                     conn.send(
                         self.build_reject_req(
@@ -295,7 +297,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                             secs.HsmsSsSelectStatus.ACTIVED))
 
                 elif (ctrl_type == secs.HsmsSsControlType.SELECT_RSP
-                    or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
+                      or ctrl_type == secs.HsmsSsControlType.LINKTEST_RSP):
 
                     conn.send(
                         self.build_reject_req(

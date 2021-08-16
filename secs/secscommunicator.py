@@ -24,13 +24,13 @@ class SecsWithReferenceMessageError(SecsCommunicatorError):
     def __str__(self):
         return (self.__class__.__name__ + '('
                 + repr(self._msg) + ','
-                + self._ref_msg._header10bytes_str()
+                + self._ref_msg.get_header10bytes_str()
                 + ')')
 
     def __repr__(self):
         return (self.__class__.__name__ + '('
                 + repr(self._msg) + ','
-                + repr(self._ref_msg._header10bytes())
+                + repr(self._ref_msg.header10bytes)
                 + ')')
 
 
@@ -155,17 +155,17 @@ class WaitingQueuing(AbstractQueuing):
 
         def _f(vv, p, m):
             with self._v_lock:
-                vvsize = len(self._vv)
-                if vvsize > 0:
+                vv_size = len(self._vv)
+                if vv_size > 0:
                     r = m - p
-                    if vvsize > r:
+                    if vv_size > r:
                         vv.extend(self._vv[0:r])
                         del self._vv[0:r]
                         return r
                     else:
                         vv.extend(self._vv)
                         self._vv.clear()
-                        return vvsize
+                        return vv_size
                 else:
                     return -1
 
@@ -237,17 +237,17 @@ class AbstractSecsCommunicator:
         self.__recv_all_msg_lstnrs = list()
         self.__sended_msg_lstnrs = list()
 
-        rpml = kwargs.get('recv_primary_msg', None)
-        if rpml is not None:
-            self.add_recv_primary_msg_listener(rpml)
+        recv_pri_msg_lstnr = kwargs.get('recv_primary_msg', None)
+        if recv_pri_msg_lstnr is not None:
+            self.add_recv_primary_msg_listener(recv_pri_msg_lstnr)
 
-        errl = kwargs.get('error', None)
-        if errl is not None:
-            self.add_error_listener(errl)
+        err_lstnr = kwargs.get('error', None)
+        if err_lstnr is not None:
+            self.add_error_listener(err_lstnr)
 
-        comml = kwargs.get('communicate', None)
-        if comml is not None:
-            self.add_communicate_listener(comml)
+        comm_lstnr = kwargs.get('communicate', None)
+        if comm_lstnr is not None:
+            self.add_communicate_listener(comm_lstnr)
         
         self.__opened = False
         self.__closed = False
@@ -333,7 +333,7 @@ class AbstractSecsCommunicator:
         return self.__name
 
     @staticmethod
-    def _tstx(v):
+    def _try_tx(v):
         """test-set-timeout-tx
 
         Args:
@@ -377,7 +377,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t1 = self._tstx(val)
+        self.__timeout_t1 = self._try_tx(val)
 
     @property
     def timeout_t2(self):
@@ -403,7 +403,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t2 = self._tstx(val)
+        self.__timeout_t2 = self._try_tx(val)
 
     @property
     def timeout_t3(self):
@@ -429,7 +429,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t3 = self._tstx(val)
+        self.__timeout_t3 = self._try_tx(val)
 
     @property
     def timeout_t4(self):
@@ -455,7 +455,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t4 = self._tstx(val)
+        self.__timeout_t4 = self._try_tx(val)
 
     @property
     def timeout_t5(self):
@@ -481,7 +481,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t5 = self._tstx(val)
+        self.__timeout_t5 = self._try_tx(val)
 
     @property
     def timeout_t6(self):
@@ -507,7 +507,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t6 = self._tstx(val)
+        self.__timeout_t6 = self._try_tx(val)
 
     @property
     def timeout_t7(self):
@@ -533,7 +533,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t7 = self._tstx(val)
+        self.__timeout_t7 = self._try_tx(val)
 
     @property
     def timeout_t8(self):
@@ -559,7 +559,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t8 = self._tstx(val)
+        self.__timeout_t8 = self._try_tx(val)
 
     def open(self):
         """Open communicator
@@ -715,7 +715,7 @@ class AbstractSecsCommunicator:
         return self._send(
             strm, func, wbit,
             self._create_secs2body(secs2body),
-            primary.get_system_bytes(),
+            primary.system_bytes,
             self.device_id)
 
     def reply_sml(self, primary, sml_str):
@@ -788,7 +788,7 @@ class AbstractSecsCommunicator:
     def add_recv_primary_msg_listener(self, listener):
         self.__recv_primary_msg_lstnrs.append(listener)
 
-    def remove_recv_priary_msg_listener(self, listener):
+    def remove_recv_primary_msg_listener(self, listener):
         self.__recv_primary_msg_lstnrs.remove(listener)
 
     def _put_recv_primary_msg(self, recv_msg):

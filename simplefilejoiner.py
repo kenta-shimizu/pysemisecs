@@ -64,7 +64,7 @@ if __name__ == '__main__':
 
                 fp.write('\n\n')
                 fp.write("if __name__ == '__main__':\n")
-                fp.write("    print('write here')\n\n")
+                fp.write("    print('write here')\n")
 
             print('wrote: ' + output_file)
     

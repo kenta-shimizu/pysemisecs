@@ -331,4 +331,3 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
         for th in self.__ths:
             th.join(0.1)
-

@@ -25,17 +25,17 @@ class AbstractSecs2Body:
     def __init__(self, item_type, value):
         self._type = item_type
         self._value = value
-        self._cache_sml = None
-        self._cache_repr = None
-        self._cache_bytes = None
+        self.__cache_sml = None
+        self.__cache_repr = None
+        self.__cache_bytes = None
 
     def __str__(self):
         return self.to_sml()
 
     def __repr__(self):
-        if self._cache_repr is None:
-            self._cache_repr = str((self._type[0], self._value))
-        return self._cache_repr
+        if self.__cache_repr is None:
+            self.__cache_repr = str((self._type[0], self._value))
+        return self.__cache_repr
 
     def __len__(self):
         return len(self._value)
@@ -131,9 +131,9 @@ class AbstractSecs2Body:
         Returns:
             str: SML
         """
-        if self._cache_sml is None:
-            self._cache_sml = self._create_to_sml()
-        return self._cache_sml
+        if self.__cache_sml is None:
+            self.__cache_sml = self._create_to_sml()
+        return self.__cache_sml
 
     def to_bytes(self):
         """bytes getter.
@@ -141,27 +141,27 @@ class AbstractSecs2Body:
         Returns:
             bytes: bytes
         """
-        if self._cache_bytes is None:
-            self._cache_bytes = self._create_to_bytes()
-        return self._cache_bytes
+        if self.__cache_bytes is None:
+            self.__cache_bytes = self._create_to_bytes()
+        return self.__cache_bytes
 
     def _create_to_sml(self):
         l, v = self._create_to_sml_value()
         return '<' + self._type[0] + ' [' + str(l) + '] ' + str(v) + ' >'
 
     def _create_to_sml_value(self):
-        return (0, '')
+        return 0, ''
 
     def _create_to_bytes(self):
-            bsvv = self._create_to_bytes_value()
-            vlen = len(bsvv)
-            bslen = struct.pack('>L', vlen)
-            if vlen >= self._BYTES_LEN_3:
-                return struct.pack('>B', (self._type[1] | 0x03)) + bslen[1:4] + bsvv
-            elif vlen >= self._BYTES_LEN_2:
-                return struct.pack('>B', (self._type[1] | 0x02)) + bslen[2:4] + bsvv
-            else:
-                return struct.pack('>B', (self._type[1] | 0x01)) + bslen[3:4] + bsvv
+        bs_vv = self._create_to_bytes_value()
+        v_len = len(bs_vv)
+        bs_len = struct.pack('>L', v_len)
+        if v_len >= self._BYTES_LEN_3:
+            return struct.pack('>B', (self._type[1] | 0x03)) + bs_len[1:4] + bs_vv
+        elif v_len >= self._BYTES_LEN_2:
+            return struct.pack('>B', (self._type[1] | 0x02)) + bs_len[2:4] + bs_vv
+        else:
+            return struct.pack('>B', (self._type[1] | 0x01)) + bs_len[3:4] + bs_vv
 
     def _create_to_bytes_value(self):
         return self._value
@@ -180,14 +180,14 @@ class AbstractSecs2Body:
             n -= 1
         
         x = 2**n
-        max = x-1
+        v_max = x-1
         
         if is_signed:
-            min = -x
+            v_min = -x
         else:
-            min = 0
+            v_min = 0
         
-        if v > max or v < min:
+        if v > v_max or v < v_min:
             raise ValueError("value is from " + str(min) + " to " + str(max) + ", value is " + str(v))
 
         return v
@@ -199,7 +199,7 @@ class Secs2AsciiBody(AbstractSecs2Body):
         super(Secs2AsciiBody, self).__init__(item_type, str(value))
 
     def _create_to_sml_value(self):
-        return (len(self._value), '"' + self._value + '"')
+        return len(self._value), ('"' + self._value + '"')
 
     def _create_to_bytes_value(self):
         return self._value.encode(encoding='ascii')
@@ -226,7 +226,7 @@ class Secs2BooleanBody(AbstractSecs2Body):
 
     def _create_to_sml_value(self):
         vv = [("TRUE" if x else "FALSE") for x in self._value]
-        return (len(vv), self._SML_VALUESEPARATOR.join(vv))
+        return len(vv), self._SML_VALUESEPARATOR.join(vv)
 
     def _create_to_bytes_value(self):
         return bytes([(0xFF if v else 0x00) for v in self._value])
@@ -257,7 +257,7 @@ class Secs2BinaryBody(AbstractSecs2Body):
 
     def _create_to_sml_value(self):
         vv = [('0x' + '{:02X}'.format(x)) for x in self._value]
-        return (len(vv), self._SML_VALUESEPARATOR.join(vv))
+        return len(vv), self._SML_VALUESEPARATOR.join(vv)
 
     @staticmethod
     def build(item_type, value):
@@ -271,7 +271,7 @@ class AbstractSecs2NumberBody(AbstractSecs2Body):
 
     def _create_to_sml_value(self):
         vv = [str(x) for x in self._value]
-        return (len(vv), self._SML_VALUESEPARATOR.join(vv))
+        return len(vv), self._SML_VALUESEPARATOR.join(vv)
 
     def _create_to_bytes_value(self):
         return b''.join([struct.pack(('>' + self._type[3]), x) for x in self._value])
@@ -341,8 +341,8 @@ class Secs2ListBody(AbstractSecs2Body):
             vv = list()
             vv.append(level + '<L [' + str(len(value)) + ']')
             for x in value:
-                if x._type[0] == 'L':
-                    vv.append(_lsf(x._value, deep_level))
+                if x.type == 'L':
+                    vv.append(_lsf(x.value, deep_level))
                 else:
                     vv.append(deep_level + x.to_sml())
             vv.append(level + '>')
@@ -351,15 +351,15 @@ class Secs2ListBody(AbstractSecs2Body):
         return _lsf(self._value)
 
     def _create_to_bytes(self):
-        vlen = len(self._value)
-        bslen = struct.pack('>L', vlen)
-        bsvv = b''.join([x.to_bytes() for x in self._value])
-        if vlen >= self._BYTES_LEN_3:
-            return struct.pack('>B', (self._type[1] | 0x03)) + bslen[1:4] + bsvv
-        elif vlen >= self._BYTES_LEN_2:
-            return struct.pack('>B', (self._type[1] | 0x02)) + bslen[2:4] + bsvv
+        v_len = len(self._value)
+        bs_len = struct.pack('>L', v_len)
+        bs_vv = b''.join([x.to_bytes() for x in self._value])
+        if v_len >= self._BYTES_LEN_3:
+            return struct.pack('>B', (self._type[1] | 0x03)) + bs_len[1:4] + bs_vv
+        elif v_len >= self._BYTES_LEN_2:
+            return struct.pack('>B', (self._type[1] | 0x02)) + bs_len[2:4] + bs_vv
         else:
-            return struct.pack('>B', (self._type[1] | 0x01)) + bslen[3:4] + bsvv
+            return struct.pack('>B', (self._type[1] | 0x01)) + bs_len[3:4] + bs_vv
 
     @staticmethod
     def build(item_type, value):
@@ -427,13 +427,13 @@ class Secs2BodyBuilder:
             len_bit = b & 0x3
 
             if len_bit == 3:
-                lenbs = (bs[pos+1] << 16) | (bs[pos+2] << 8) | bs[pos+3]
+                len_bs = (bs[pos+1] << 16) | (bs[pos+2] << 8) | bs[pos+3]
             elif len_bit == 2:
-                lenbs = (bs[pos+1] << 8) | bs[pos+2]
+                len_bs = (bs[pos+1] << 8) | bs[pos+2]
             else:
-                lenbs = bs[pos+1]
+                len_bs = bs[pos+1]
 
-            return (t, lenbs, (len_bit + 1))
+            return t, len_bs, (len_bit + 1)
 
         def _f(bs, pos):
 
@@ -448,19 +448,19 @@ class Secs2BodyBuilder:
                 for _ in range(r[1]):
                     v, p = _f(bs, p)
                     vv.append(v)
-                return (tt[5](tt, vv), p)
+                return tt[5](tt, vv), p
 
             elif tt[0] == 'BOOLEAN':
                 vv = [(b != 0x00) for b in bs[start_index:end_index]]
-                return (tt[5](tt, vv), end_index)
+                return tt[5](tt, vv), end_index
 
             elif tt[0] == 'A':
                 v = bs[start_index:end_index].decode(encoding='ascii')
-                return (tt[5](tt, v), end_index)
+                return tt[5](tt, v), end_index
 
             elif tt[0] == 'B':
                 vv = bs[start_index:end_index]
-                return (tt[5](tt, vv), end_index)
+                return tt[5](tt, vv), end_index
 
             elif tt[0] in ('I1', 'I2', 'I4', 'I8', 'F8', 'F4', 'U1', 'U2', 'U4', 'U8'):
                 vv = list()
@@ -470,20 +470,20 @@ class Secs2BodyBuilder:
                     p += tt[2]
                     v = struct.unpack(('>' + tt[3]), bs[prev:p])
                     vv.append(v[0])
-                return (tt[5](tt, vv), end_index)
+                return tt[5](tt, vv), end_index
 
         try:
             if len(body_bytes) == 0:
                 return None
             
-            r, p = _f(body_bytes, 0)
-            length = len(body_bytes)
+            lr, lp = _f(body_bytes, 0)
+            len_body = len(body_bytes)
 
-            if p == length:
-                r._cache_bytes = bytes(body_bytes)
-                return r
+            if lp == len_body:
+                lr._cache_bytes = bytes(body_bytes)
+                return lr
             else:
-                raise Secs2BodyBytesParseError("not reach bytes end, reach=" + str(p) + ", length=" + str(length))
+                raise Secs2BodyBytesParseError("not reach bytes end, reach=" + str(lp) + ", length=" + str(len_body))
 
         except ValueError as e:
             raise Secs2BodyBytesParseError(e)

@@ -70,10 +70,10 @@ class SmlParser:
                     for a in args:
                         if type(a) is str:
                             if v == a:
-                                return (v, p)
+                                return v, p
                         else:
                             if a(v):
-                                return (v, p)
+                                return v, p
                     p += 1
             else:
                 while True:
@@ -81,26 +81,26 @@ class SmlParser:
                     if _is_ws(v):
                         p += 1
                     else:
-                        return (v, p)
+                        return v, p
 
-        def _ssbkt(s, from_pos):    # seek size_start_blacket'[' position, return position, -1 if not exist
+        def _ssbkt(s, from_pos):    # seek size_start_bracket'[' position, return position, -1 if not exist
             v, p = _seek_next(s, from_pos)
             return p if v == '[' else -1
 
-        def _sebkt(s, from_pos):    # seek size_end_blacket']' position, return position
+        def _sebkt(s, from_pos):    # seek size_end_bracket']' position, return position
             return (_seek_next(s, from_pos, ']'))[1]
 
-        def _isbkt(s, from_pos):    # seek item_start_blacket'<' position, return position, -1 if not exist
+        def _isbkt(s, from_pos):    # seek item_start_bracket'<' position, return position, -1 if not exist
             v, p = _seek_next(s, from_pos)
             return p if v == '<' else -1
 
-        def _iebkt(s, from_pos):    # seek item_end_blacket'>' position, return position
+        def _iebkt(s, from_pos):    # seek item_end_bracket'>' position, return position
             return (_seek_next(s, from_pos, '>'))[1]
 
         def _seek_item(s, from_pos):  # seek item_type, return (item_type, shifted_position)
             p_start = (_seek_next(s, from_pos))[1]
             p_end = (_seek_next(s, (p_start + 1), '[', '"', '<', '>', _is_ws))[1]
-            return (secs.Secs2BodyBuilder.get_item_type_from_sml(s[p_start:p_end]), p_end)
+            return secs.Secs2BodyBuilder.get_item_type_from_sml(s[p_start:p_end]), p_end
 
         def _f(s, from_pos):
 
@@ -120,7 +120,7 @@ class SmlParser:
                 while True:
                     v, p = _seek_next(s, p)
                     if v == '>':
-                        return (tt[5](tt, vv), (p + 1))
+                        return tt[5](tt, vv), (p + 1)
 
                     elif v == '<':
                         r, p = _f(s, p)
@@ -139,15 +139,15 @@ class SmlParser:
                     elif ux == 'FALSE' or ux == 'F':
                         vv.append(False)
                     else:
-                        raise Secs2BodySmlParseError("Not accept, BOOELAN require TRUE or FALSE")
-                return (tt[5](tt, vv), (r + 1))
+                        raise Secs2BodySmlParseError("Not accept, BOOLEAN require TRUE or FALSE")
+                return tt[5](tt, vv), (r + 1)
 
             elif tt[0] == 'A':
                 vv = list()
                 while True:
                     v, p_start = _seek_next(s, p)
                     if v == '>':
-                        return (tt[5](tt, ''.join(vv)), (p_start + 1))
+                        return tt[5](tt, ''.join(vv)), (p_start + 1)
  
                     elif v == '"':
                         v, p_end = _seek_next(s, (p_start + 1), '"')
@@ -165,17 +165,17 @@ class SmlParser:
 
             elif tt[0] in ('B', 'I1', 'I2', 'I4', 'I8', 'F4', 'F8', 'U1', 'U2', 'U4', 'U8'):
                 r = _iebkt(s, p)
-                return (tt[5](tt, s[p:r].strip().split()), (r + 1))
+                return tt[5](tt, s[p:r].strip().split()), (r + 1)
 
         try:
             if sml_str is None:
                 raise Secs2BodySmlParseError("Not accept None")
             
             ss = str(sml_str).strip()
-            r, p = _f(ss, 0)
-            if len(ss[p:]) > 0:
-                raise Secs2BodySmlParseError("Not reach end, end=" + str(p) + ", length=" + str(len(ss)))
-            return r
+            lr, lp = _f(ss, 0)
+            if len(ss[lp:]) > 0:
+                raise Secs2BodySmlParseError("Not reach end, end=" + str(lp) + ", length=" + str(len(ss)))
+            return lr
 
         except TypeError as e:
             raise Secs2BodySmlParseError(str(e))

@@ -184,18 +184,18 @@ class Secs1SendReplyPackPool:
     def __get_packs(self, system_bytes):
         with self.__lock:
             return [p for p in self.__packs
-                    if p.secs1msg().get_system_bytes() == system_bytes]
+                    if p.secs1msg().system_bytes == system_bytes]
 
     def sended(self, msg):
-        for p in self.__get_packs(msg.get_system_bytes()):
+        for p in self.__get_packs(msg.system_bytes):
             p.notify_sended()
 
     def raise_except(self, msg, e):
-        for p in self.__get_packs(msg.get_system_bytes()):
+        for p in self.__get_packs(msg.system_bytes):
             p.notify_except(e)
 
     def receive(self, msg):
-        pp = self.__get_packs(msg.get_system_bytes())
+        pp = self.__get_packs(msg.system_bytes)
         if pp:
             for p in pp:
                 p.notify_reply_msg(msg)
@@ -686,4 +686,3 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         a = sum(bb[1:-2]) & 0xFFFF
         b = (bb[-2] << 8) | bb[-1]
         return a == b
-

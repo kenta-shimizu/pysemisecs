@@ -22,7 +22,7 @@ class Secs1Message(secs.SecsMessage):
     def __str__(self):
         if self.__cache_str is None:
             vv = [
-                self._header10bytes_str(),
+                self.get_header10bytes_str(),
                 self._STR_LINESEPARATOR,
                 'S', str(self.strm),
                 'F', str(self.func)
@@ -110,9 +110,9 @@ class Secs1Message(secs.SecsMessage):
 
             h10bs = self._header10bytes()
             if self.secs2body is None:
-                bodybs = bytes()
+                body_bs = bytes()
             else:
-                bodybs = self.secs2body.to_bytes()
+                body_bs = self.secs2body.to_bytes()
 
             blocks = []
             pos = 0
@@ -124,7 +124,7 @@ class Secs1Message(secs.SecsMessage):
                 if block_num > 0x7FFF:
                     raise Secs1MessageParseError("blocks overflow")
                 
-                bb, shift, ebit = _bb(bodybs, pos)
+                bb, shift, ebit = _bb(body_bs, pos)
                 hh = _hh(h10bs, block_num, ebit)
                 ss = _sum(hh, bb)
 
@@ -168,34 +168,34 @@ class Secs1Message(secs.SecsMessage):
 class Secs1MessageBlock:
 
     def __init__(self, block_bytes):
-        self._bytes = block_bytes
-        self._cache_str = None
-        self._cache_repr = None
+        self.__bytes = block_bytes
+        self.__cache_str = None
+        self.__cache_repr = None
 
     def __str__(self):
-        if self._cache_str is None:
+        if self.__cache_str is None:
             self._cache_str = (
-                '[' + '{:02X}'.format(self._bytes[1])
-                + ' ' + '{:02X}'.format(self._bytes[2])
-                + '|' + '{:02X}'.format(self._bytes[3])
-                + ' ' + '{:02X}'.format(self._bytes[4])
-                + '|' + '{:02X}'.format(self._bytes[5])
-                + ' ' + '{:02X}'.format(self._bytes[6])
-                + '|' + '{:02X}'.format(self._bytes[7])
-                + ' ' + '{:02X}'.format(self._bytes[8])
-                + ' ' + '{:02X}'.format(self._bytes[9])
-                + ' ' + '{:02X}'.format(self._bytes[10])
-                + '] length: ' + str(self._bytes[0])
+                '[' + '{:02X}'.format(self.__bytes[1])
+                + ' ' + '{:02X}'.format(self.__bytes[2])
+                + '|' + '{:02X}'.format(self.__bytes[3])
+                + ' ' + '{:02X}'.format(self.__bytes[4])
+                + '|' + '{:02X}'.format(self.__bytes[5])
+                + ' ' + '{:02X}'.format(self.__bytes[6])
+                + '|' + '{:02X}'.format(self.__bytes[7])
+                + ' ' + '{:02X}'.format(self.__bytes[8])
+                + ' ' + '{:02X}'.format(self.__bytes[9])
+                + ' ' + '{:02X}'.format(self.__bytes[10])
+                + '] length: ' + str(self.__bytes[0])
                 )
         return self._cache_str
 
     def __repr__(self):
-        if self._cache_repr is None:
-            self._cache_repr = str(self._bytes)
-        return self._cache_repr
+        if self.__cache_repr is None:
+            self.__cache_repr = str(self.__bytes)
+        return self.__cache_repr
 
     def to_bytes(self):
-        return self._bytes
+        return self.__bytes
 
     @property
     def device_id(self):
@@ -208,7 +208,7 @@ class Secs1MessageBlock:
         Returns:
             int: Device-ID
         """
-        bs = self._bytes[1:3]
+        bs = self.__bytes[1:3]
         return ((bs[0] << 8) & 0x7F00) | bs[1]
 
     @property
@@ -222,7 +222,7 @@ class Secs1MessageBlock:
         Returns:
             int: Stream-Number
         """
-        return self._bytes[3] & 0x7F
+        return self.__bytes[3] & 0x7F
 
     @property
     def func(self):
@@ -235,7 +235,7 @@ class Secs1MessageBlock:
         Returns:
             int: Function-Number
         """
-        return self._bytes[4]
+        return self.__bytes[4]
 
     @property
     def rbit(self):
@@ -248,7 +248,7 @@ class Secs1MessageBlock:
         Returns:
             bool: True if has R-Bit
         """
-        return (self._bytes[1] & 0x80) == 0x80
+        return (self.__bytes[1] & 0x80) == 0x80
 
     @property
     def wbit(self):
@@ -261,7 +261,7 @@ class Secs1MessageBlock:
         Returns:
             bool: True if has W-Bit
         """
-        return (self._bytes[3] & 0x80) == 0x80
+        return (self.__bytes[3] & 0x80) == 0x80
 
     @property
     def ebit(self):
@@ -274,38 +274,40 @@ class Secs1MessageBlock:
         Returns:
             bool: True if has E-Bit
         """
-        return (self._bytes[5] & 0x80) == 0x80
+        return (self.__bytes[5] & 0x80) == 0x80
 
     def get_block_number(self):
-        bs = self._bytes[5:7]
+        bs = self.__bytes[5:7]
         return ((bs[0] << 8) & 0x7F00) | bs[1]
 
     def get_system_bytes(self):
-        return self._bytes[7:11]
+        return self.__bytes[7:11]
     
     def is_next_block(self, block):
+        bs = block.to_bytes()
         return (
-            block._bytes[1] == self._bytes[1]
-            and block._bytes[2] == self._bytes[2]
-            and block._bytes[3] == self._bytes[3]
-            and block._bytes[4] == self._bytes[4]
-            and block._bytes[7] == self._bytes[7]
-            and block._bytes[8] == self._bytes[8]
-            and block._bytes[9] == self._bytes[9]
-            and block._bytes[10] == self._bytes[10]
+            bs[1] == self.__bytes[1]
+            and bs[2] == self.__bytes[2]
+            and bs[3] == self.__bytes[3]
+            and bs[4] == self.__bytes[4]
+            and bs[7] == self.__bytes[7]
+            and bs[8] == self.__bytes[8]
+            and bs[9] == self.__bytes[9]
+            and bs[10] == self.__bytes[10]
             and block.get_block_number() == (self.get_block_number() + 1)
         )
 
     def is_same_block(self, block):
+        bs = block.to_bytes()
         return (
-            block._bytes[1] == self._bytes[1]
-            and block._bytes[2] == self._bytes[2]
-            and block._bytes[3] == self._bytes[3]
-            and block._bytes[4] == self._bytes[4]
-            and block._bytes[5] == self._bytes[5]
-            and block._bytes[6] == self._bytes[6]
-            and block._bytes[7] == self._bytes[7]
-            and block._bytes[8] == self._bytes[8]
-            and block._bytes[9] == self._bytes[9]
-            and block._bytes[10] == self._bytes[10]
+            bs[1] == self.__bytes[1]
+            and bs[2] == self.__bytes[2]
+            and bs[3] == self.__bytes[3]
+            and bs[4] == self.__bytes[4]
+            and bs[5] == self.__bytes[5]
+            and bs[6] == self.__bytes[6]
+            and bs[7] == self.__bytes[7]
+            and bs[8] == self.__bytes[8]
+            and bs[9] == self.__bytes[9]
+            and bs[10] == self.__bytes[10]
         )
