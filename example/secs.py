@@ -1,10 +1,10 @@
-import struct
 import threading
-import os
 import importlib
-import socket
-import re
 import datetime
+import socket
+import struct
+import os
+import re
 
 
 class Secs2BodyParseError(Exception):
@@ -3218,6 +3218,12 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
 
                 finally:
                     self.__ths.remove(th)
+
+                    try:
+                        server.shutdown(socket.SHUT_RDWR)
+                    except Exception as es:
+                        if not self.is_closed:
+                            self._put_error(es)
 
         except Exception as e:
             if not self.is_closed:

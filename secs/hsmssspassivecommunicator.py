@@ -123,6 +123,12 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 finally:
                     self.__ths.remove(th)
 
+                    try:
+                        server.shutdown(socket.SHUT_RDWR)
+                    except Exception as es:
+                        if not self.is_closed:
+                            self._put_error(es)
+
         except Exception as e:
             if not self.is_closed:
                 self._put_error(secs.HsmsSsCommunicatorError(e))
