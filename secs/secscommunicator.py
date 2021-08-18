@@ -229,7 +229,7 @@ class AbstractSecsCommunicator:
 
         self.__communicating = False
         self.__comm_rlock = threading.RLock()
-        self.__comm_condition = threading.Condition()
+        self.__comm_cdt = threading.Condition()
 
         self.__recv_primary_msg_lstnrs = list()
         self.__communicate_lstnrs = list()
@@ -262,7 +262,7 @@ class AbstractSecsCommunicator:
         """GEM getter
 
         Returns:
-            <Gem>: GEM-instance
+            secs.Gem: GEM-instance
         """
         return self.__gem
 
@@ -333,7 +333,7 @@ class AbstractSecsCommunicator:
         return self.__name
 
     @staticmethod
-    def _try_tx(v):
+    def _try_gt_zero(v):
         """test-set-timeout-tx
 
         Args:
@@ -344,12 +344,12 @@ class AbstractSecsCommunicator:
             ValueError: raise if v is not greater than 0.0.
 
         Returns:
-            int or float: tested value
+            float: tested value
         """
         if v is None:
             raise TypeError("Timeout-value require not None")
         if v > 0.0:
-            return v
+            return float(v)
         else:
             raise ValueError("Timeout-value require > 0.0")
 
@@ -377,7 +377,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t1 = self._try_tx(val)
+        self.__timeout_t1 = self._try_gt_zero(val)
 
     @property
     def timeout_t2(self):
@@ -403,7 +403,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t2 = self._try_tx(val)
+        self.__timeout_t2 = self._try_gt_zero(val)
 
     @property
     def timeout_t3(self):
@@ -429,7 +429,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t3 = self._try_tx(val)
+        self.__timeout_t3 = self._try_gt_zero(val)
 
     @property
     def timeout_t4(self):
@@ -455,7 +455,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t4 = self._try_tx(val)
+        self.__timeout_t4 = self._try_gt_zero(val)
 
     @property
     def timeout_t5(self):
@@ -481,7 +481,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t5 = self._try_tx(val)
+        self.__timeout_t5 = self._try_gt_zero(val)
 
     @property
     def timeout_t6(self):
@@ -507,7 +507,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t6 = self._try_tx(val)
+        self.__timeout_t6 = self._try_gt_zero(val)
 
     @property
     def timeout_t7(self):
@@ -533,7 +533,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t7 = self._try_tx(val)
+        self.__timeout_t7 = self._try_gt_zero(val)
 
     @property
     def timeout_t8(self):
@@ -559,7 +559,7 @@ class AbstractSecsCommunicator:
             TypeError: if value is None.
             ValueError: if value is not greater than 0.0.
         """
-        self.__timeout_t8 = self._try_tx(val)
+        self.__timeout_t8 = self._try_gt_zero(val)
 
     def open(self):
         """Open communicator
@@ -579,7 +579,7 @@ class AbstractSecsCommunicator:
         # prototype-pattern
         raise NotImplementedError()
 
-    def open_and_wait_until_communicating(self):
+    def open_and_wait_until_communicating(self, timeout=None):
 
         if not self.is_open:
             self._open()
@@ -589,8 +589,8 @@ class AbstractSecsCommunicator:
                 raise SecsCommunicatorError("Communicator closed")
             if self.is_communicating:
                 return
-            with self.__comm_condition:
-                self.__comm_condition.wait()
+            with self.__comm_cdt:
+                self.__comm_cdt.wait()
 
     @property
     def is_open(self):
@@ -617,8 +617,8 @@ class AbstractSecsCommunicator:
     def _set_closed(self):
         with self._open_close_rlock:
             self.__closed = True
-            with self.__comm_condition:
-                self.__comm_condition.notify_all()
+            with self.__comm_cdt:
+                self.__comm_cdt.notify_all()
 
     def __enter__(self):
         return self
@@ -699,7 +699,7 @@ class AbstractSecsCommunicator:
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool: W-Bit.
-            secs2body (Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
+            secs2body (secs.Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
 
         Raises:
             SecsCommunicatorError: if communicator not opened.
@@ -722,7 +722,7 @@ class AbstractSecsCommunicator:
         """Send reply message by SML
 
         Args:
-            primary (SecsMessage): Primary-Message
+            primary (secs.SecsMessage): Primary-Message
             sml_str (str): SML-String
             
         Raises:
@@ -771,7 +771,7 @@ class AbstractSecsCommunicator:
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool): W-Bit.
-            secs2body (Secs2Body, tuple, list or None): SECS-II-body.
+            secs2body (secs.Secs2Body, tuple, list or None): SECS-II-body.
             system_bytes (bytes): System-4-bytes.
             device_id (int): Device-ID.
 
@@ -781,11 +781,19 @@ class AbstractSecsCommunicator:
             SecsWaitReplyError: if reply not received.
 
         Returns:
-            SecsMessage or None: Reply-Message if exist, otherwise None
+            secs.SecsMessage: Reply-Message if exist, otherwise None
         """
         raise NotImplementedError()
 
     def add_recv_primary_msg_listener(self, listener):
+        """Add receive-primary-message listener
+
+        Args:
+            listener (function):
+
+        Returns:
+            None
+        """
         self.__recv_primary_msg_lstnrs.append(listener)
 
     def remove_recv_primary_msg_listener(self, listener):
@@ -833,8 +841,8 @@ class AbstractSecsCommunicator:
                 self.__communicating = communicating
                 for ls in self.__communicate_lstnrs:
                     ls(self.__communicating, self)
-                with self.__comm_condition:
-                    self.__comm_condition.notify_all()
+                with self.__comm_cdt:
+                    self.__comm_cdt.notify_all()
 
     @property
     def is_communicating(self):

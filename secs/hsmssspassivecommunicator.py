@@ -32,7 +32,7 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
 
     @timeout_rebind.setter
     def timeout_rebind(self, val):
-        self.__timeout_rebind = float(val)
+        self.__timeout_rebind = self._try_gt_zero(val)
     
     @timeout_rebind.getter
     def timeout_rebind(self):

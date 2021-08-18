@@ -54,7 +54,7 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
 
     @reopen.setter
     def reopen(self, val):
-        self.__reopen = float(val)
+        self.__reopen = self._try_gt_zero(val)
 
     def __set_serial(self, ser):
         with self.__serial_lock:

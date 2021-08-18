@@ -94,7 +94,7 @@ class Secs1OnTcpIpCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
     @reconnect.setter
     def reconnect(self, val):
-        self.__reconnect = float(val)
+        self.__reconnect = self._try_gt_zero(val)
 
     def _open(self):
         with self._open_close_rlock:
@@ -226,7 +226,7 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
 
     @rebind.setter
     def rebind(self, val):
-        self.__rebind = float(val)
+        self.__rebind = self._try_gt_zero(val)
 
     def _open(self):
         with self._open_close_rlock:
@@ -247,16 +247,24 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                         try:
                             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
 
-                                server.bind(self.__ipaddr)
-                                server.listen()
+                                try:
+                                    server.bind(self.__ipaddr)
+                                    server.listen()
 
-                                while not self.is_closed:
+                                    while not self.is_closed:
 
-                                    sock = (server.accept())[0]
+                                        sock = (server.accept())[0]
 
-                                    th_a = threading.Thread(target=self.__accept, args=(sock,), daemon=True)
-                                    th_a.start()
-                                    self.__ths.append(th_a)
+                                        th_a = threading.Thread(target=self.__accept, args=(sock,), daemon=True)
+                                        th_a.start()
+                                        self.__ths.append(th_a)
+
+                                finally:
+                                    try:
+                                        server.shutdown(socket.SHUT_RDWR)
+                                    except Exception as ee:
+                                        if not self.is_closed:
+                                            self._put_error(ee)
 
                         except Exception as e:
                             if not self.is_closed:
