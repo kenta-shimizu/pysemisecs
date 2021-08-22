@@ -49,44 +49,39 @@ class SendReplyHsmsSsMessagePack:
 
     def __init__(self, msg):
         self.__msg = msg
-        self.__reply_msg_lock = threading.Lock()
         self.__reply_msg_cdt = threading.Condition()
         self.__reply_msg = None
         self.__terminated = False
-        self.__terminated_lock = threading.Lock()
-    
+
     def shutdown(self):
-        with self.__terminated_lock:
+        with self.__reply_msg_cdt:
             self.__terminated = True
-            with self.__reply_msg_cdt:
-                self.__reply_msg_cdt.notify_all()
-    
+            self.__reply_msg_cdt.notify_all()
+
     def __is_terminated(self):
-        with self.__terminated_lock:
+        with self.__reply_msg_cdt:
             return self.__terminated
 
     def get_system_bytes(self):
         return self.__msg.system_bytes
 
     def put_reply_msg(self, reply_msg):
-        with self.__reply_msg_lock:
+        with self.__reply_msg_cdt:
             self.__reply_msg = reply_msg
-            with self.__reply_msg_cdt:
-                self.__reply_msg_cdt.notify_all()
+            self.__reply_msg_cdt.notify_all()
 
     def wait_reply_msg(self, timeout):
 
-        if self.__is_terminated():
-            return None
+        with self.__reply_msg_cdt:
 
-        with self.__reply_msg_lock:
+            if self.__is_terminated():
+                return None
+
             if self.__reply_msg is not None:
                 return self.__reply_msg
 
-        with self.__reply_msg_cdt:
             self.__reply_msg_cdt.wait(timeout)
         
-        with self.__reply_msg_lock:
             return self.__reply_msg
 
 
@@ -141,7 +136,6 @@ class HsmsSsConnection:
         self.__put_sended_msg = sended_msg_put_callback
         self.__put_error = error_put_callback
 
-        self.__terminated_lock = threading.Lock()
         self.__terminated_cdt = threading.Condition()
         self.__terminated = False
 
@@ -161,35 +155,24 @@ class HsmsSsConnection:
         self.shutdown()
 
     def shutdown(self):
-        with self.__terminated_lock:
+        with self.__terminated_cdt:
 
-            if not self.__terminated:
-                return
+            if not self.__is_terminated():
 
-            self.__terminated = True
+                self.__terminated = True
 
-            self.__bbqq.shutdown()
-            self.__send_reply_pool.shutdown()
+                self.__bbqq.shutdown()
+                self.__send_reply_pool.shutdown()
 
-            with self.__terminated_cdt:
                 self.__terminated_cdt.notify_all()
 
     def __is_terminated(self):
-        with self.__terminated_lock:
+        with self.__terminated_cdt:
             return self.__terminated
     
     def await_termination(self, timeout=None):
-
-        if self.__is_terminated():
-            return True
-        
-        while True:
-            with self.__terminated_cdt:
-                self.__terminated_cdt.wait(timeout)
-
-            f = self.__is_terminated()
-            if f or timeout is not None:
-                return f
+        with self.__terminated_cdt:
+            self.__terminated_cdt.wait_for(self.__is_terminated, timeout)
 
     def __receiving_socket_bytes(self):
         try:
@@ -200,10 +183,13 @@ class HsmsSsConnection:
                 else:
                     raise HsmsSsCommunicatorError("Terminate detect")
 
+        except HsmsSsCommunicatorError as e:
+            if not self.__is_terminated():
+                self.__put_error(e)
         except Exception as e:
             if not self.__is_terminated():
                 self.__put_error(HsmsSsCommunicatorError(e))
-        
+
         finally:
             self.shutdown()
 

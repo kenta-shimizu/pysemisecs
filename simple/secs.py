@@ -1,10 +1,10 @@
-import threading
-import datetime
+import os
+import importlib
 import socket
 import re
-import os
 import struct
-import importlib
+import threading
+import datetime
 
 
 class Secs2BodyParseError(Exception):
@@ -1523,11 +1523,9 @@ class SecsWaitReplyMessageError(SecsWithReferenceMessageError):
 class AbstractQueuing:
 
     def __init__(self):
-        self._v_lock = threading.Lock()
-        self._v_cdt = threading.Condition()
-        self._vv = list()
         self.__terminated = False
-        self.__terminated_lock = threading.Lock()
+        self._vv = list()
+        self._v_cdt = threading.Condition()
 
     def __enter__(self):
         return self
@@ -1536,44 +1534,32 @@ class AbstractQueuing:
         self.shutdown()
 
     def shutdown(self):
-        with self.__terminated_lock:
+        with self._v_cdt:
             self.__terminated = True
-            with self._v_cdt:
-                self._v_cdt.notify_all()
+            self._v_cdt.notify_all()
 
     def _is_terminated(self):
-        with self.__terminated_lock:
+        with self._v_cdt:
             return self.__terminated
 
     def await_termination(self, timeout=None):
-
-        if self._is_terminated():
-            return True
-
-        while True:
-            with self._v_cdt:
-                self._v_cdt.wait(timeout)
-
-            f = self._is_terminated()
-            if f or timeout is not None:
-                return f
+        with self._v_cdt:
+            return self._v_cdt.wait_for(self._is_terminated, timeout)
 
     def put(self, value):
-        if value is not None and not self._is_terminated():
-            with self._v_lock:
+        with self._v_cdt:
+            if value is not None and not self._is_terminated():
                 self._vv.append(value)
-                with self._v_cdt:
-                    self._v_cdt.notify_all()
+                self._v_cdt.notify_all()
 
     def puts(self, values):
-        if values and not self._is_terminated():
-            with self._v_lock:
+        with self._v_cdt:
+            if values and not self._is_terminated():
                 self._vv.extend([v for v in values])
-                with self._v_cdt:
-                    self._v_cdt.notify_all()
+                self._v_cdt.notify_all()
 
     def _poll_vv(self):
-        with self._v_lock:
+        with self._v_cdt:
             if self._vv:
                 return self._vv.pop(0)
             else:
@@ -1582,23 +1568,23 @@ class AbstractQueuing:
 
 class CallbackQueuing(AbstractQueuing):
 
-    def __init__(self, func):
+    def __init__(self, callback):
         super(CallbackQueuing, self).__init__()
-        self._func = func
+        self._cb = callback
 
         def _f():
-            while True:
-                v = self._poll_vv()
-                if v is None:
-                    with self._v_cdt:
+            with self._v_cdt:
+                while True:
+                    v = self._poll_vv()
+                    if v is None:
                         self._v_cdt.wait()
 
-                    if self._is_terminated():
-                        self._func(None)
-                        return
+                        if self._is_terminated():
+                            self._cb(None)
+                            return
 
-                else:
-                    self._func(v)
+                    else:
+                        self._cb(v)
 
         threading.Thread(target=_f, daemon=True).start()
 
@@ -1610,53 +1596,54 @@ class WaitingQueuing(AbstractQueuing):
 
     def poll(self, timeout=None):
 
-        if self._is_terminated():
-            return None
-
-        v = self._poll_vv()
-        if v is not None:
-            return v
-
         with self._v_cdt:
+
+            if self._is_terminated():
+                return None
+
+            v = self._poll_vv()
+            if v is not None:
+                return v
+
             self._v_cdt.wait(timeout)
 
-        if self._is_terminated():
-            return None
+            if self._is_terminated():
+                return None
 
-        return self._poll_vv()
+            return self._poll_vv()
 
     def put_to_list(self, values, pos, size, timeout=None):
 
         def _f(vv, p, m):
-            with self._v_lock:
-                vv_size = len(self._vv)
-                if vv_size > 0:
-                    r = m - p
-                    if vv_size > r:
-                        vv.extend(self._vv[0:r])
-                        del self._vv[0:r]
-                        return r
-                    else:
-                        vv.extend(self._vv)
-                        self._vv.clear()
-                        return vv_size
+            vv_size = len(self._vv)
+            if vv_size > 0:
+                r = m - p
+                if vv_size > r:
+                    vv.extend(self._vv[0:r])
+                    del self._vv[0:r]
+                    return r
                 else:
-                    return -1
-
-        if self._is_terminated():
-            return -1
-
-        rr = _f(values, pos, size)
-        if rr > 0:
-            return rr
+                    vv.extend(self._vv)
+                    self._vv.clear()
+                    return vv_size
+            else:
+                return -1
 
         with self._v_cdt:
+
+            if self._is_terminated():
+                return -1
+
+            rr = _f(values, pos, size)
+            if rr > 0:
+                return rr
+
             self._v_cdt.wait(timeout)
 
-        if self._is_terminated():
-            return -1
+            if self._is_terminated():
+                return -1
 
-        return _f(values, pos, size)
+            return _f(values, pos, size)
 
 
 class AbstractSecsCommunicator:
@@ -1668,7 +1655,7 @@ class AbstractSecsCommunicator:
     __DEFAULT_TIMEOUT_T5 = 10.0
     __DEFAULT_TIMEOUT_T6 = 5.0
     __DEFAULT_TIMEOUT_T7 = 10.0
-    __DEFAULT_TIMEOUT_T8 = 6.0
+    __DEFAULT_TIMEOUT_T8 = 5.0
 
     def __init__(self, device_id, is_equip, **kwargs):
 
@@ -1702,12 +1689,11 @@ class AbstractSecsCommunicator:
         self._sys_num = 0
 
         self.__communicating = False
-        self.__comm_rlock = threading.RLock()
         self.__comm_cdt = threading.Condition()
 
         self.__recv_primary_msg_lstnrs = list()
         self.__communicate_lstnrs = list()
-        self.__error_listeners = list()
+        self.__error_lstnrs = list()
         self.__recv_all_msg_lstnrs = list()
         self.__sended_msg_lstnrs = list()
 
@@ -2058,13 +2044,16 @@ class AbstractSecsCommunicator:
         if not self.is_open:
             self._open()
 
-        while True:
-            if self.is_closed:
-                raise SecsCommunicatorError("Communicator closed")
-            if self.is_communicating:
-                return
-            with self.__comm_cdt:
-                self.__comm_cdt.wait()
+        with self.__comm_cdt:
+
+            def _p():
+                return self.is_closed or self.is_communicating
+
+            r = self.__comm_cdt.wait_for(_p, timeout)
+            if r:
+                if self.is_closed:
+                    raise SecsCommunicatorError("Communicator closed")
+            return r
 
     @property
     def is_open(self):
@@ -2301,22 +2290,21 @@ class AbstractSecsCommunicator:
                 ls(sended_msg, self)
 
     def add_communicate_listener(self, listener):
-        with self.__comm_rlock:
+        with self.__comm_cdt:
             self.__communicate_lstnrs.append(listener)
             listener(self.__communicating, self)
 
     def remove_communicate_listener(self, listener):
-        with self.__comm_rlock:
+        with self.__comm_cdt:
             self.__communicate_lstnrs.remove(listener)
 
     def _put_communicated(self, communicating):
-        with self.__comm_rlock:
+        with self.__comm_cdt:
             if communicating != self.__communicating:
                 self.__communicating = communicating
                 for ls in self.__communicate_lstnrs:
                     ls(self.__communicating, self)
-                with self.__comm_cdt:
-                    self.__comm_cdt.notify_all()
+                self.__comm_cdt.notify_all()
 
     @property
     def is_communicating(self):
@@ -2324,18 +2312,18 @@ class AbstractSecsCommunicator:
 
     @is_communicating.getter
     def is_communicating(self):
-        with self.__comm_rlock:
+        with self.__comm_cdt:
             return self.__communicating
 
     def add_error_listener(self, listener):
-        self.__error_listeners.append(listener)
+        self.__error_lstnrs.append(listener)
 
     def remove_error_listener(self, listener):
-        self.__error_listeners.remove(listener)
+        self.__error_lstnrs.remove(listener)
 
     def _put_error(self, e):
         if e is not None:
-            for ls in self.__error_listeners:
+            for ls in self.__error_lstnrs:
                 ls(e, self)
 
 
@@ -2386,44 +2374,39 @@ class SendReplyHsmsSsMessagePack:
 
     def __init__(self, msg):
         self.__msg = msg
-        self.__reply_msg_lock = threading.Lock()
         self.__reply_msg_cdt = threading.Condition()
         self.__reply_msg = None
         self.__terminated = False
-        self.__terminated_lock = threading.Lock()
 
     def shutdown(self):
-        with self.__terminated_lock:
+        with self.__reply_msg_cdt:
             self.__terminated = True
-            with self.__reply_msg_cdt:
-                self.__reply_msg_cdt.notify_all()
+            self.__reply_msg_cdt.notify_all()
 
     def __is_terminated(self):
-        with self.__terminated_lock:
+        with self.__reply_msg_cdt:
             return self.__terminated
 
     def get_system_bytes(self):
         return self.__msg.system_bytes
 
     def put_reply_msg(self, reply_msg):
-        with self.__reply_msg_lock:
+        with self.__reply_msg_cdt:
             self.__reply_msg = reply_msg
-            with self.__reply_msg_cdt:
-                self.__reply_msg_cdt.notify_all()
+            self.__reply_msg_cdt.notify_all()
 
     def wait_reply_msg(self, timeout):
 
-        if self.__is_terminated():
-            return None
+        with self.__reply_msg_cdt:
 
-        with self.__reply_msg_lock:
+            if self.__is_terminated():
+                return None
+
             if self.__reply_msg is not None:
                 return self.__reply_msg
 
-        with self.__reply_msg_cdt:
             self.__reply_msg_cdt.wait(timeout)
 
-        with self.__reply_msg_lock:
             return self.__reply_msg
 
 
@@ -2478,7 +2461,6 @@ class HsmsSsConnection:
         self.__put_sended_msg = sended_msg_put_callback
         self.__put_error = error_put_callback
 
-        self.__terminated_lock = threading.Lock()
         self.__terminated_cdt = threading.Condition()
         self.__terminated = False
 
@@ -2498,35 +2480,24 @@ class HsmsSsConnection:
         self.shutdown()
 
     def shutdown(self):
-        with self.__terminated_lock:
+        with self.__terminated_cdt:
 
-            if not self.__terminated:
-                return
+            if not self.__is_terminated():
 
-            self.__terminated = True
+                self.__terminated = True
 
-            self.__bbqq.shutdown()
-            self.__send_reply_pool.shutdown()
+                self.__bbqq.shutdown()
+                self.__send_reply_pool.shutdown()
 
-            with self.__terminated_cdt:
                 self.__terminated_cdt.notify_all()
 
     def __is_terminated(self):
-        with self.__terminated_lock:
+        with self.__terminated_cdt:
             return self.__terminated
 
     def await_termination(self, timeout=None):
-
-        if self.__is_terminated():
-            return True
-
-        while True:
-            with self.__terminated_cdt:
-                self.__terminated_cdt.wait(timeout)
-
-            f = self.__is_terminated()
-            if f or timeout is not None:
-                return f
+        with self.__terminated_cdt:
+            self.__terminated_cdt.wait_for(self.__is_terminated, timeout)
 
     def __receiving_socket_bytes(self):
         try:
@@ -2537,6 +2508,9 @@ class HsmsSsConnection:
                 else:
                     raise HsmsSsCommunicatorError("Terminate detect")
 
+        except HsmsSsCommunicatorError as e:
+            if not self.__is_terminated():
+                self.__put_error(e)
         except Exception as e:
             if not self.__is_terminated():
                 self.__put_error(HsmsSsCommunicatorError(e))
@@ -3501,49 +3475,47 @@ class MsgAndRecvBytesWaitingQueuing(WaitingQueuing):
         self.puts(bs)
 
     def entry_msg(self, msg):
-        if msg is not None and not self._is_terminated():
-            with self._v_lock:
+        with self._v_cdt:
+            if msg is not None and not self._is_terminated():
                 self.__msg_queue.append(msg)
-                with self._v_cdt:
-                    self._v_cdt.notify_all()
+                self._v_cdt.notify_all()
 
     def poll_either(self, timeout=None):
 
-        if self._is_terminated():
-            return None, None
+        with self._v_cdt:
 
-        with self._v_lock:
+            if self._is_terminated():
+                return None, None
+
             if self.__msg_queue:
                 return self.__msg_queue.pop(0), None
 
-        v = self._poll_vv()
-        if v is not None:
-            return None, v
+            v = self._poll_vv()
+            if v is not None:
+                return None, v
 
-        with self._v_cdt:
             self._v_cdt.wait(timeout)
 
-        if self._is_terminated():
-            return None, None
+            if self._is_terminated():
+                return None, None
 
-        with self._v_lock:
             if self.__msg_queue:
                 return self.__msg_queue.pop(0), None
 
-        return None, self._poll_vv()
+            return None, self._poll_vv()
 
     def recv_bytes_garbage(self, timeout):
 
-        if self._is_terminated():
-            return
-
-        with self._v_lock:
+        with self._v_cdt:
             del self._vv[:]
 
-        while True:
-            v = self.poll(timeout)
-            if v is None:
+            if self._is_terminated():
                 return
+
+            while True:
+                v = self.poll(timeout)
+                if v is None:
+                    return
 
 
 class SendSecs1MessagePack:
@@ -3763,7 +3735,6 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
 
         self._set_closed()
 
-        self.__msg_and_bytes_queue.shutdown()
         self.__recv_primary_msg_putter.shutdown()
         self.__recv_all_msg_putter.shutdown()
         self.__sended_msg_putter.shutdown()
@@ -3772,6 +3743,7 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
         self.__try_send_block_putter.shutdown()
         self.__sended_block_putter.shutdown()
         self.__secs1_circuit_error_msg_putter.shutdown()
+        self.__msg_and_bytes_queue.shutdown()
 
         if self.__circuit_th is not None:
             self.__circuit_th.join(0.1)

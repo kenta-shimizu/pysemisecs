@@ -42,49 +42,47 @@ class MsgAndRecvBytesWaitingQueuing(secs.WaitingQueuing):
         self.puts(bs)
 
     def entry_msg(self, msg):
-        if msg is not None and not self._is_terminated():
-            with self._v_lock:
+        with self._v_cdt:
+            if msg is not None and not self._is_terminated():
                 self.__msg_queue.append(msg)
-                with self._v_cdt:
-                    self._v_cdt.notify_all()
+                self._v_cdt.notify_all()
 
     def poll_either(self, timeout=None):
 
-        if self._is_terminated():
-            return None, None
+        with self._v_cdt:
 
-        with self._v_lock:
+            if self._is_terminated():
+                return None, None
+
             if self.__msg_queue:
                 return self.__msg_queue.pop(0), None
 
-        v = self._poll_vv()
-        if v is not None:
-            return None, v
+            v = self._poll_vv()
+            if v is not None:
+                return None, v
 
-        with self._v_cdt:
             self._v_cdt.wait(timeout)
 
-        if self._is_terminated():
-            return None, None
+            if self._is_terminated():
+                return None, None
 
-        with self._v_lock:
             if self.__msg_queue:
                 return self.__msg_queue.pop(0), None
 
-        return None, self._poll_vv()
+            return None, self._poll_vv()
 
     def recv_bytes_garbage(self, timeout):
 
-        if self._is_terminated():
-            return
-
-        with self._v_lock:
+        with self._v_cdt:
             del self._vv[:]
 
-        while True:
-            v = self.poll(timeout)
-            if v is None:
+            if self._is_terminated():
                 return
+
+            while True:
+                v = self.poll(timeout)
+                if v is None:
+                    return
 
 
 class SendSecs1MessagePack:
@@ -304,7 +302,6 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
 
         self._set_closed()
 
-        self.__msg_and_bytes_queue.shutdown()
         self.__recv_primary_msg_putter.shutdown()
         self.__recv_all_msg_putter.shutdown()
         self.__sended_msg_putter.shutdown()
@@ -313,6 +310,7 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         self.__try_send_block_putter.shutdown()
         self.__sended_block_putter.shutdown()
         self.__secs1_circuit_error_msg_putter.shutdown()
+        self.__msg_and_bytes_queue.shutdown()
 
         if self.__circuit_th is not None:
             self.__circuit_th.join(0.1)

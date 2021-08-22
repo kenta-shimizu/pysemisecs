@@ -49,11 +49,9 @@ class SecsWaitReplyMessageError(SecsWithReferenceMessageError):
 class AbstractQueuing:
 
     def __init__(self):
-        self._v_lock = threading.Lock()
-        self._v_cdt = threading.Condition()
-        self._vv = list()
         self.__terminated = False
-        self.__terminated_lock = threading.Lock()
+        self._vv = list()
+        self._v_cdt = threading.Condition()
 
     def __enter__(self):
         return self
@@ -62,44 +60,32 @@ class AbstractQueuing:
         self.shutdown()
 
     def shutdown(self):
-        with self.__terminated_lock:
+        with self._v_cdt:
             self.__terminated = True
-            with self._v_cdt:
-                self._v_cdt.notify_all()
+            self._v_cdt.notify_all()
     
     def _is_terminated(self):
-        with self.__terminated_lock:
+        with self._v_cdt:
             return self.__terminated
     
     def await_termination(self, timeout=None):
-
-        if self._is_terminated():
-            return True
-        
-        while True:
-            with self._v_cdt:
-                self._v_cdt.wait(timeout)
-            
-            f = self._is_terminated()
-            if f or timeout is not None:
-                return f
+        with self._v_cdt:
+            return self._v_cdt.wait_for(self._is_terminated, timeout)
 
     def put(self, value):
-        if value is not None and not self._is_terminated():
-            with self._v_lock:
+        with self._v_cdt:
+            if value is not None and not self._is_terminated():
                 self._vv.append(value)
-                with self._v_cdt:
-                    self._v_cdt.notify_all()
+                self._v_cdt.notify_all()
 
     def puts(self, values):
-        if values and not self._is_terminated():
-            with self._v_lock:
+        with self._v_cdt:
+            if values and not self._is_terminated():
                 self._vv.extend([v for v in values])
-                with self._v_cdt:
-                    self._v_cdt.notify_all()
+                self._v_cdt.notify_all()
 
     def _poll_vv(self):
-        with self._v_lock:
+        with self._v_cdt:
             if self._vv:
                 return self._vv.pop(0)
             else:
@@ -108,23 +94,23 @@ class AbstractQueuing:
 
 class CallbackQueuing(AbstractQueuing):
 
-    def __init__(self, func):
+    def __init__(self, callback):
         super(CallbackQueuing, self).__init__()
-        self._func = func
+        self._cb = callback
 
         def _f():
-            while True:
-                v = self._poll_vv()
-                if v is None:
-                    with self._v_cdt:
+            with self._v_cdt:
+                while True:
+                    v = self._poll_vv()
+                    if v is None:
                         self._v_cdt.wait()
-                    
-                    if self._is_terminated():
-                        self._func(None)
-                        return
 
-                else:
-                    self._func(v)
+                        if self._is_terminated():
+                            self._cb(None)
+                            return
+
+                    else:
+                        self._cb(v)
 
         threading.Thread(target=_f, daemon=True).start()
 
@@ -136,53 +122,54 @@ class WaitingQueuing(AbstractQueuing):
 
     def poll(self, timeout=None):
 
-        if self._is_terminated():
-            return None
-
-        v = self._poll_vv()
-        if v is not None:
-            return v
-        
         with self._v_cdt:
+
+            if self._is_terminated():
+                return None
+
+            v = self._poll_vv()
+            if v is not None:
+                return v
+        
             self._v_cdt.wait(timeout)
 
-        if self._is_terminated():
-            return None
+            if self._is_terminated():
+                return None
 
-        return self._poll_vv()
+            return self._poll_vv()
 
     def put_to_list(self, values, pos, size, timeout=None):
 
         def _f(vv, p, m):
-            with self._v_lock:
-                vv_size = len(self._vv)
-                if vv_size > 0:
-                    r = m - p
-                    if vv_size > r:
-                        vv.extend(self._vv[0:r])
-                        del self._vv[0:r]
-                        return r
-                    else:
-                        vv.extend(self._vv)
-                        self._vv.clear()
-                        return vv_size
+            vv_size = len(self._vv)
+            if vv_size > 0:
+                r = m - p
+                if vv_size > r:
+                    vv.extend(self._vv[0:r])
+                    del self._vv[0:r]
+                    return r
                 else:
-                    return -1
+                    vv.extend(self._vv)
+                    self._vv.clear()
+                    return vv_size
+            else:
+                return -1
 
-        if self._is_terminated():
-            return -1
-
-        rr = _f(values, pos, size)
-        if rr > 0:
-            return rr
-        
         with self._v_cdt:
+
+            if self._is_terminated():
+                return -1
+
+            rr = _f(values, pos, size)
+            if rr > 0:
+                return rr
+
             self._v_cdt.wait(timeout)
 
-        if self._is_terminated():
-            return -1
+            if self._is_terminated():
+                return -1
 
-        return _f(values, pos, size)
+            return _f(values, pos, size)
 
 
 class AbstractSecsCommunicator:
@@ -194,7 +181,7 @@ class AbstractSecsCommunicator:
     __DEFAULT_TIMEOUT_T5 = 10.0
     __DEFAULT_TIMEOUT_T6 = 5.0
     __DEFAULT_TIMEOUT_T7 = 10.0
-    __DEFAULT_TIMEOUT_T8 = 6.0
+    __DEFAULT_TIMEOUT_T8 = 5.0
 
     def __init__(self, device_id, is_equip, **kwargs):
 
@@ -228,12 +215,11 @@ class AbstractSecsCommunicator:
         self._sys_num = 0
 
         self.__communicating = False
-        self.__comm_rlock = threading.RLock()
         self.__comm_cdt = threading.Condition()
 
         self.__recv_primary_msg_lstnrs = list()
         self.__communicate_lstnrs = list()
-        self.__error_listeners = list()
+        self.__error_lstnrs = list()
         self.__recv_all_msg_lstnrs = list()
         self.__sended_msg_lstnrs = list()
 
@@ -584,13 +570,16 @@ class AbstractSecsCommunicator:
         if not self.is_open:
             self._open()
 
-        while True:
-            if self.is_closed:
-                raise SecsCommunicatorError("Communicator closed")
-            if self.is_communicating:
-                return
-            with self.__comm_cdt:
-                self.__comm_cdt.wait()
+        with self.__comm_cdt:
+
+            def _p():
+                return self.is_closed or self.is_communicating
+
+            r = self.__comm_cdt.wait_for(_p, timeout)
+            if r:
+                if self.is_closed:
+                    raise SecsCommunicatorError("Communicator closed")
+            return r
 
     @property
     def is_open(self):
@@ -827,22 +816,21 @@ class AbstractSecsCommunicator:
                 ls(sended_msg, self)
     
     def add_communicate_listener(self, listener):
-        with self.__comm_rlock:
+        with self.__comm_cdt:
             self.__communicate_lstnrs.append(listener)
             listener(self.__communicating, self)
 
     def remove_communicate_listener(self, listener):
-        with self.__comm_rlock:
+        with self.__comm_cdt:
             self.__communicate_lstnrs.remove(listener)
 
     def _put_communicated(self, communicating):
-        with self.__comm_rlock:
+        with self.__comm_cdt:
             if communicating != self.__communicating:
                 self.__communicating = communicating
                 for ls in self.__communicate_lstnrs:
                     ls(self.__communicating, self)
-                with self.__comm_cdt:
-                    self.__comm_cdt.notify_all()
+                self.__comm_cdt.notify_all()
 
     @property
     def is_communicating(self):
@@ -850,16 +838,16 @@ class AbstractSecsCommunicator:
 
     @is_communicating.getter
     def is_communicating(self):
-        with self.__comm_rlock:
+        with self.__comm_cdt:
             return self.__communicating
 
     def add_error_listener(self, listener):
-        self.__error_listeners.append(listener)
+        self.__error_lstnrs.append(listener)
 
     def remove_error_listener(self, listener):
-        self.__error_listeners.remove(listener)
+        self.__error_lstnrs.remove(listener)
 
     def _put_error(self, e):
         if e is not None:
-            for ls in self.__error_listeners:
+            for ls in self.__error_lstnrs:
                 ls(e, self)
