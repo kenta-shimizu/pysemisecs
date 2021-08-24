@@ -262,9 +262,9 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                                 finally:
                                     try:
                                         server.shutdown(socket.SHUT_RDWR)
-                                    except Exception as ee:
+                                    except Exception as e2:
                                         if not self.is_closed:
-                                            self._put_error(ee)
+                                            self._put_error(e2)
 
                         except Exception as e:
                             if not self.is_closed:
@@ -338,4 +338,5 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 cdt.notify_all()
 
         for th in self.__ths:
-            th.join(0.1)
+            if th.is_alive():
+                th.join(0.1)

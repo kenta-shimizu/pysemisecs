@@ -1,10 +1,10 @@
-import os
-import importlib
 import socket
+import os
 import re
+import importlib
+import datetime
 import struct
 import threading
-import datetime
 
 
 class Secs2BodyParseError(Exception):
@@ -3078,7 +3078,8 @@ class HsmsSsActiveCommunicator(AbstractHsmsSsCommunicator):
                 cdt.notify_all()
 
         for th in self.__ths:
-            th.join(0.1)
+            if th.is_alive():
+                th.join(0.1)
 
 
 class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
@@ -3161,15 +3162,15 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                         with s:
                             try:
                                 self.__accept_socket(s)
-                            except Exception as ea:
+                            except Exception as e3:
                                 if not self.is_closed:
-                                    self._put_error(ea)
+                                    self._put_error(e3)
                             finally:
                                 try:
                                     s.shutdown(socket.SHUT_RDWR)
-                                except Exception as eb:
-                                    if self.is_closed:
-                                        self._put_error(eb)
+                                except Exception as e4:
+                                    if not self.is_closed:
+                                        self._put_error(e4)
 
                     try:
                         while not self.is_closed:
@@ -3181,9 +3182,9 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                                 daemon=True
                                 ).start()
 
-                    except Exception as ee:
+                    except Exception as e2:
                         if not self.is_closed:
-                            self._put_error(HsmsSsCommunicatorError(ee))
+                            self._put_error(HsmsSsCommunicatorError(e2))
 
                     finally:
                         with cdt:
@@ -3432,7 +3433,8 @@ class HsmsSsPassiveCommunicator(AbstractHsmsSsCommunicator):
                 cdt.notify_all()
 
         for th in self.__ths:
-            th.join(0.1)
+            if th.is_alive():
+                th.join(0.1)
 
 
 class Secs1CommunicatorError(SecsCommunicatorError):
@@ -3746,7 +3748,8 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
         self.__msg_and_bytes_queue.shutdown()
 
         if self.__circuit_th is not None:
-            self.__circuit_th.join(0.1)
+            if self.__circuit_th.is_alive():
+                self.__circuit_th.join(0.1)
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         return self.send_secs1_msg(
@@ -4378,9 +4381,9 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                                 finally:
                                     try:
                                         server.shutdown(socket.SHUT_RDWR)
-                                    except Exception as ee:
+                                    except Exception as e2:
                                         if not self.is_closed:
-                                            self._put_error(ee)
+                                            self._put_error(e2)
 
                         except Exception as e:
                             if not self.is_closed:
@@ -4454,7 +4457,8 @@ class Secs1OnTcpIpReceiverCommunicator(AbstractSecs1OnTcpIpCommunicator):
                 cdt.notify_all()
 
         for th in self.__ths:
-            th.join(0.1)
+            if th.is_alive():
+                th.join(0.1)
 
 
 class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
@@ -4548,11 +4552,7 @@ class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
             if self.is_open:
                 raise RuntimeError("Already opened")
 
-            try:
-                serial = importlib.import_module('serial')
-            except ModuleNotFoundError as ex:
-                print("Secs1OnPySerialCommunicator require 'pySerial'")
-                raise ex
+            serial = importlib.import_module('serial')
 
             def _f():
                 cdt = threading.Condition()
@@ -4596,9 +4596,9 @@ class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
                             finally:
                                 try:
                                     ser.close()
-                                except Exception as ee:
+                                except Exception as e2:
                                     if not self.is_closed:
-                                        self._put_error(ee)
+                                        self._put_error(e2)
 
                         except Exception as e:
                             if not self.is_closed:
@@ -4635,7 +4635,8 @@ class Secs1OnPySerialCommunicator(AbstractSecs1Communicator):
                 cdt.notify_all()
 
         for th in self.__ths:
-            th.join(0.1)
+            if th.is_alive():
+                th.join(0.1)
 
 
 class ClockType:

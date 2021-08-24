@@ -313,7 +313,8 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         self.__msg_and_bytes_queue.shutdown()
 
         if self.__circuit_th is not None:
-            self.__circuit_th.join(0.1)
+            if self.__circuit_th.is_alive():
+                self.__circuit_th.join(0.1)
 
     def _send(self, strm, func, wbit, secs2body, system_bytes, device_id):
         return self.send_secs1_msg(

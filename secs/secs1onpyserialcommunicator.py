@@ -94,11 +94,7 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
             if self.is_open:
                 raise RuntimeError("Already opened")
             
-            try:
-                serial = importlib.import_module('serial')
-            except ModuleNotFoundError as ex:
-                print("Secs1OnPySerialCommunicator require 'pySerial'")
-                raise ex
+            serial = importlib.import_module('serial')
 
             def _f():
                 cdt = threading.Condition()
@@ -142,9 +138,9 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
                             finally:
                                 try:
                                     ser.close()
-                                except Exception as ee:
+                                except Exception as e2:
                                     if not self.is_closed:
-                                        self._put_error(ee)
+                                        self._put_error(e2)
 
                         except Exception as e:
                             if not self.is_closed:
@@ -181,4 +177,5 @@ class Secs1OnPySerialCommunicator(secs.AbstractSecs1Communicator):
                 cdt.notify_all()
 
         for th in self.__ths:
-            th.join(0.1)
+            if th.is_alive():
+                th.join(0.1)

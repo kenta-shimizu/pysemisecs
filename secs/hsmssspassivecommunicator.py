@@ -83,15 +83,15 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                         with s:
                             try:
                                 self.__accept_socket(s)
-                            except Exception as ea:
+                            except Exception as e3:
                                 if not self.is_closed:
-                                    self._put_error(ea)
+                                    self._put_error(e3)
                             finally:
                                 try:
                                     s.shutdown(socket.SHUT_RDWR)
-                                except Exception as eb:
-                                    if self.is_closed:
-                                        self._put_error(eb)
+                                except Exception as e4:
+                                    if not self.is_closed:
+                                        self._put_error(e4)
 
                     try:
                         while not self.is_closed:
@@ -103,9 +103,9 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                                 daemon=True
                                 ).start()
 
-                    except Exception as ee:
+                    except Exception as e2:
                         if not self.is_closed:
-                            self._put_error(secs.HsmsSsCommunicatorError(ee))
+                            self._put_error(secs.HsmsSsCommunicatorError(e2))
                     
                     finally:
                         with cdt:
@@ -354,4 +354,5 @@ class HsmsSsPassiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 cdt.notify_all()
 
         for th in self.__ths:
-            th.join(0.1)
+            if th.is_alive():
+                th.join(0.1)

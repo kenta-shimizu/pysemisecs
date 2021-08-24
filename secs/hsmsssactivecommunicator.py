@@ -218,4 +218,5 @@ class HsmsSsActiveCommunicator(secs.AbstractHsmsSsCommunicator):
                 cdt.notify_all()
 
         for th in self.__ths:
-            th.join(0.1)
+            if th.is_alive():
+                th.join(0.1)
