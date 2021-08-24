@@ -25,8 +25,8 @@ This library is SEMI-SECS-communicate implementation on Python3.
 
 - pip install
 
-```python
-    pip install git+https://github.com/kenta-shimizu/pysemisecs
+```bash
+  $ pip install git+https://github.com/kenta-shimizu/pysemisecs
 ```
 
 ## Create Communicator instance and open
