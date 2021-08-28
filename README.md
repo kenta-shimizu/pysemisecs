@@ -4,7 +4,7 @@ buiding...
 
 ## Introduction
 
-This library is SEMI-SECS-communicate implementation on Python3.
+This package is SEMI-SECS-communicate implementation on Python3.
 
 ## Supports
 
