@@ -29,6 +29,8 @@ This package is SEMI-SECS-communicate implementation on Python3.
   $ pip install git+https://github.com/kenta-shimizu/pysemisecs
 ```
 
+  Notes: this pip also installs pySerial.
+
 ## Create Communicator instance and open
 
 - For use HSMS-SS-Passive example
