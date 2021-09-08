@@ -93,7 +93,7 @@ class SecsMessage:
         Alias of self.secs2body
 
         Returns:
-            <Secs2Body>: Secs2Body
+            secs.AbstractSecs2Body: Secs2Body
         """
         return self.secs2body
 

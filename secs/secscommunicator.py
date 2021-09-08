@@ -1,4 +1,5 @@
 import threading
+import inspect
 import secs
 
 
@@ -625,7 +626,7 @@ class AbstractSecsCommunicator:
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool): W-Bit.
-            secs2body (<Secs2Body> tuple or list, optional): SECS-II-body. Defaults to None.
+            secs2body (tuple or list or secs.AbstractSecs2Body): SECS-II-body. Defaults to None.
 
         Raises:
             SecsCommunicatorError: if communicator not opened.
@@ -633,7 +634,7 @@ class AbstractSecsCommunicator:
             SecsWaitReplyError: if reply not received.
 
         Returns:
-            <SecsMessage> or None: Reply-Message if exist, otherwise None.
+            secs.SecsMessage: Reply-Message if exist, otherwise None.
 
         Examples:
             if send 'S1F1 W.',
@@ -671,11 +672,11 @@ class AbstractSecsCommunicator:
             SecsCommunicatorError: if communicator not opened.
             SecsSendMessageError: if send failed.
             SecsWaitReplyError: if reply not received.
-            Secs2BodySmlParseError: if Secs2body parse failed.
-            SmlParseError: if SML parse failed.
+            secs.Secs2BodySmlParseError: if Secs2body parse failed.
+            secs.SmlParseError: if SML parse failed.
 
         Returns:
-            SecsMessage or None: Reply-Message if exist, otherwise None.
+            secs.SecsMessage: Reply-Message if exist, otherwise None.
         """
         strm, func, wbit, s2b = secs.SmlParser.parse(sml_str)
         return self.send(strm, func, wbit, s2b)
@@ -684,11 +685,11 @@ class AbstractSecsCommunicator:
         """Send reply message
 
         Args:
-            primary (SecsMessage): Primary-Message.
+            primary (secs.SecsMessage): Primary-Message.
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool: W-Bit.
-            secs2body (secs.Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
+            secs2body (tuple or list or secs.AbstractSecs2Body): SECS-II-body. Defaults to None.
 
         Raises:
             SecsCommunicatorError: if communicator not opened.
@@ -717,8 +718,8 @@ class AbstractSecsCommunicator:
         Raises:
             SecsCommunicatorError: if communicator not opened.
             SecsSendMessageError: if send failed.
-            Secs2BodySmlParseError: if Secs2body parse failed.
-            SmlParseError: if SML parse failed.
+            secs.Secs2BodySmlParseError: if Secs2body parse failed.
+            secs.SmlParseError: if SML parse failed.
 
         Returns:
             None: None
@@ -760,7 +761,7 @@ class AbstractSecsCommunicator:
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool): W-Bit.
-            secs2body (secs.Secs2Body, tuple, list or None): SECS-II-body.
+            secs2body (tuple or list or secs.AbstractSecs2Body): SECS-II-body.
             system_bytes (bytes): System-4-bytes.
             device_id (int): Device-ID.
 
@@ -774,11 +775,16 @@ class AbstractSecsCommunicator:
         """
         raise NotImplementedError()
 
+    @staticmethod
+    def _is_single_args_listener(listener):
+        n = len(inspect.signature(listener).parameters)
+        return n == 1
+
     def add_recv_primary_msg_listener(self, listener):
         """Add receive-primary-message listener
 
         Args:
-            listener (function):
+            listener (function): listener
 
         Returns:
             None
@@ -791,7 +797,10 @@ class AbstractSecsCommunicator:
     def _put_recv_primary_msg(self, recv_msg):
         if recv_msg is not None:
             for ls in self.__recv_primary_msg_lstnrs:
-                ls(recv_msg, self)
+                if self._is_single_args_listener(ls):
+                    ls(recv_msg)
+                else:
+                    ls(recv_msg, self)
 
     def add_recv_all_msg_listener(self, listener):
         self.__recv_all_msg_lstnrs.append(listener)
@@ -802,7 +811,10 @@ class AbstractSecsCommunicator:
     def _put_recv_all_msg(self, recv_msg):
         if recv_msg is not None:
             for ls in self.__recv_all_msg_lstnrs:
-                ls(recv_msg, self)
+                if self._is_single_args_listener(ls):
+                    ls(recv_msg)
+                else:
+                    ls(recv_msg, self)
     
     def add_sended_msg_listener(self, listener):
         self.__sended_msg_lstnrs.append(listener)
@@ -813,7 +825,10 @@ class AbstractSecsCommunicator:
     def _put_sended_msg(self, sended_msg):
         if sended_msg is not None:
             for ls in self.__sended_msg_lstnrs:
-                ls(sended_msg, self)
+                if self._is_single_args_listener(ls):
+                    ls(sended_msg)
+                else:
+                    ls(sended_msg, self)
     
     def add_communicate_listener(self, listener):
         with self.__comm_cdt:
@@ -829,7 +844,10 @@ class AbstractSecsCommunicator:
             if communicating != self.__communicating:
                 self.__communicating = communicating
                 for ls in self.__communicate_lstnrs:
-                    ls(self.__communicating, self)
+                    if self._is_single_args_listener(ls):
+                        ls(self.__communicating)
+                    else:
+                        ls(self.__communicating, self)
                 self.__comm_cdt.notify_all()
 
     @property
@@ -850,4 +868,7 @@ class AbstractSecsCommunicator:
     def _put_error(self, e):
         if e is not None:
             for ls in self.__error_lstnrs:
-                ls(e, self)
+                if self._is_single_args_listener(ls):
+                    ls(e)
+                else:
+                    ls(e, self)

@@ -1,10 +1,11 @@
-import datetime
-import importlib
+import threading
+import inspect
 import os
+import re
+import importlib
 import socket
 import struct
-import threading
-import re
+import datetime
 
 
 class Secs2BodyParseError(Exception):
@@ -528,11 +529,11 @@ class SmlParser:
 
         Returns:
             tuple: (
-                Stream-Number (int),
-                Function-Number (int),
-                has-WBit (bool),
-                Secs2Body or None
-                )
+                int: Stream-Number,
+                int: Function-Number),
+                bool: W-Bit,
+                AbstractSecs2Body: secs2body or None
+            )
         """
 
         s = sml_str.replace('\n', ' ').strip()
@@ -773,7 +774,7 @@ class SecsMessage:
         Alias of self.secs2body
 
         Returns:
-            <Secs2Body>: Secs2Body
+            AbstractSecs2Body: Secs2Body
         """
         return self.secs2body
 
@@ -2099,7 +2100,7 @@ class AbstractSecsCommunicator:
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool): W-Bit.
-            secs2body (<Secs2Body> tuple or list, optional): SECS-II-body. Defaults to None.
+            secs2body (tuple or list or AbstractSecs2Body): SECS-II-body. Defaults to None.
 
         Raises:
             SecsCommunicatorError: if communicator not opened.
@@ -2107,7 +2108,7 @@ class AbstractSecsCommunicator:
             SecsWaitReplyError: if reply not received.
 
         Returns:
-            <SecsMessage> or None: Reply-Message if exist, otherwise None.
+            SecsMessage: Reply-Message if exist, otherwise None.
 
         Examples:
             if send 'S1F1 W.',
@@ -2149,7 +2150,7 @@ class AbstractSecsCommunicator:
             SmlParseError: if SML parse failed.
 
         Returns:
-            SecsMessage or None: Reply-Message if exist, otherwise None.
+            SecsMessage: Reply-Message if exist, otherwise None.
         """
         strm, func, wbit, s2b = SmlParser.parse(sml_str)
         return self.send(strm, func, wbit, s2b)
@@ -2162,7 +2163,7 @@ class AbstractSecsCommunicator:
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool: W-Bit.
-            secs2body (Secs2Body or tuple, list, optional): SECS-II-body. Defaults to None.
+            secs2body (tuple or list or AbstractSecs2Body): SECS-II-body. Defaults to None.
 
         Raises:
             SecsCommunicatorError: if communicator not opened.
@@ -2234,7 +2235,7 @@ class AbstractSecsCommunicator:
             strm (int): Stream-Number.
             func (int): Function-Number.
             wbit (bool): W-Bit.
-            secs2body (Secs2Body, tuple, list or None): SECS-II-body.
+            secs2body (tuple or list or AbstractSecs2Body): SECS-II-body.
             system_bytes (bytes): System-4-bytes.
             device_id (int): Device-ID.
 
@@ -2248,11 +2249,16 @@ class AbstractSecsCommunicator:
         """
         raise NotImplementedError()
 
+    @staticmethod
+    def _is_single_args_listener(listener):
+        n = len(inspect.signature(listener).parameters)
+        return n == 1
+
     def add_recv_primary_msg_listener(self, listener):
         """Add receive-primary-message listener
 
         Args:
-            listener (function):
+            listener (function): listener
 
         Returns:
             None
@@ -2265,7 +2271,10 @@ class AbstractSecsCommunicator:
     def _put_recv_primary_msg(self, recv_msg):
         if recv_msg is not None:
             for ls in self.__recv_primary_msg_lstnrs:
-                ls(recv_msg, self)
+                if self._is_single_args_listener(ls):
+                    ls(recv_msg)
+                else:
+                    ls(recv_msg, self)
 
     def add_recv_all_msg_listener(self, listener):
         self.__recv_all_msg_lstnrs.append(listener)
@@ -2276,7 +2285,10 @@ class AbstractSecsCommunicator:
     def _put_recv_all_msg(self, recv_msg):
         if recv_msg is not None:
             for ls in self.__recv_all_msg_lstnrs:
-                ls(recv_msg, self)
+                if self._is_single_args_listener(ls):
+                    ls(recv_msg)
+                else:
+                    ls(recv_msg, self)
 
     def add_sended_msg_listener(self, listener):
         self.__sended_msg_lstnrs.append(listener)
@@ -2287,7 +2299,10 @@ class AbstractSecsCommunicator:
     def _put_sended_msg(self, sended_msg):
         if sended_msg is not None:
             for ls in self.__sended_msg_lstnrs:
-                ls(sended_msg, self)
+                if self._is_single_args_listener(ls):
+                    ls(sended_msg)
+                else:
+                    ls(sended_msg, self)
 
     def add_communicate_listener(self, listener):
         with self.__comm_cdt:
@@ -2303,7 +2318,10 @@ class AbstractSecsCommunicator:
             if communicating != self.__communicating:
                 self.__communicating = communicating
                 for ls in self.__communicate_lstnrs:
-                    ls(self.__communicating, self)
+                    if self._is_single_args_listener(ls):
+                        ls(self.__communicating)
+                    else:
+                        ls(self.__communicating, self)
                 self.__comm_cdt.notify_all()
 
     @property
@@ -2324,7 +2342,10 @@ class AbstractSecsCommunicator:
     def _put_error(self, e):
         if e is not None:
             for ls in self.__error_lstnrs:
-                ls(e, self)
+                if self._is_single_args_listener(ls):
+                    ls(e)
+                else:
+                    ls(e, self)
 
 
 class HsmsSsCommunicatorError(SecsCommunicatorError):
@@ -2842,7 +2863,10 @@ class AbstractHsmsSsCommunicator(AbstractSecsCommunicator):
             if state != self._hsmsss_comm:
                 self._hsmsss_comm = state
                 for ls in self._hsmsss_comm_lstnrs:
-                    ls(self._hsmsss_comm, self)
+                    if self._is_single_args_listener(ls):
+                        ls(self._hsmsss_comm)
+                    else:
+                        ls(self._hsmsss_comm, self)
                 self._put_communicated(state == HsmsSsCommunicateState.SELECTED)
                 if callback is not None:
                     callback()
@@ -3802,7 +3826,10 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
     def _put_recv_block(self, block):
         if block is not None:
             for ls in self.__recv_block_lstnrs:
-                ls(block, self)
+                if self._is_single_args_listener(ls):
+                    ls(block)
+                else:
+                    ls(block, self)
 
     def add_try_send_block_listener(self, listener):
         self.__try_send_block_lstnrs.append(listener)
@@ -3813,7 +3840,10 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
     def _put_try_send_block(self, block):
         if block is not None:
             for ls in self.__try_send_block_lstnrs:
-                ls(block, self)
+                if self._is_single_args_listener(ls):
+                    ls(block)
+                else:
+                    ls(block, self)
 
     def add_sended_block_listener(self, listener):
         self.__sended_block_lstnrs.append(listener)
@@ -3824,7 +3854,10 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
     def _put_sended_block(self, block):
         if block is not None:
             for ls in self.__sended_block_lstnrs:
-                ls(block, self)
+                if self._is_single_args_listener(ls):
+                    ls(block)
+                else:
+                    ls(block, self)
 
     def add_secs1_circuit_error_msg_listener(self, listener):
         self.__secs1_circuit_error_msg_lstnrs.append(listener)
@@ -3835,7 +3868,10 @@ class AbstractSecs1Communicator(AbstractSecsCommunicator):
     def _put_secs1_circuit_error_msg(self, msg_obj):
         if msg_obj is not None:
             for ls in self.__secs1_circuit_error_msg_lstnrs:
-                ls(msg_obj, self)
+                if self._is_single_args_listener(ls):
+                    ls(msg_obj)
+                else:
+                    ls(msg_obj, self)
 
     def __circuit(self):
 

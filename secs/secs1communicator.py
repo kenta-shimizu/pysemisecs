@@ -367,7 +367,10 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
     def _put_recv_block(self, block):
         if block is not None:
             for ls in self.__recv_block_lstnrs:
-                ls(block, self)
+                if self._is_single_args_listener(ls):
+                    ls(block)
+                else:
+                    ls(block, self)
     
     def add_try_send_block_listener(self, listener):
         self.__try_send_block_lstnrs.append(listener)
@@ -378,7 +381,10 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
     def _put_try_send_block(self, block):
         if block is not None:
             for ls in self.__try_send_block_lstnrs:
-                ls(block, self)
+                if self._is_single_args_listener(ls):
+                    ls(block)
+                else:
+                    ls(block, self)
     
     def add_sended_block_listener(self, listener):
         self.__sended_block_lstnrs.append(listener)
@@ -389,7 +395,10 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
     def _put_sended_block(self, block):
         if block is not None:
             for ls in self.__sended_block_lstnrs:
-                ls(block, self)
+                if self._is_single_args_listener(ls):
+                    ls(block)
+                else:
+                    ls(block, self)
 
     def add_secs1_circuit_error_msg_listener(self, listener):
         self.__secs1_circuit_error_msg_lstnrs.append(listener)
@@ -400,7 +409,10 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
     def _put_secs1_circuit_error_msg(self, msg_obj):
         if msg_obj is not None:
             for ls in self.__secs1_circuit_error_msg_lstnrs:
-                ls(msg_obj, self)
+                if self._is_single_args_listener(ls):
+                    ls(msg_obj)
+                else:
+                    ls(msg_obj, self)
 
     def __circuit(self):
 

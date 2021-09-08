@@ -517,7 +517,10 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
             if state != self._hsmsss_comm:
                 self._hsmsss_comm = state
                 for ls in self._hsmsss_comm_lstnrs:
-                    ls(self._hsmsss_comm, self)
+                    if self._is_single_args_listener(ls):
+                        ls(self._hsmsss_comm)
+                    else:
+                        ls(self._hsmsss_comm, self)
                 self._put_communicated(state == HsmsSsCommunicateState.SELECTED)
                 if callback is not None:
                     callback()

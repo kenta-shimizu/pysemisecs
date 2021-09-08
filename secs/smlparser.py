@@ -32,11 +32,11 @@ class SmlParser:
 
         Returns:
             tuple: (
-                Stream-Number (int),
-                Function-Number (int),
-                has-WBit (bool),
-                Secs2Body or None
-                )
+                int: Stream-Number,
+                int: Function-Number),
+                bool: W-Bit,
+                secs.AbstractSecs2Body: secs2body or None
+            )
         """
 
         s = sml_str.replace('\n', ' ').strip()
