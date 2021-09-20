@@ -254,10 +254,20 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
 
     @is_master.getter
     def is_master(self):
+        """master-mode getter.
+
+        Returns:
+            bool: True if master-mode
+        """
         return self.__is_master
 
     @is_master.setter
     def is_master(self, val):
+        """master-mode setter.
+
+        Args:
+            val (bool): True if master-mode
+        """
         self.__is_master = bool(val)
 
     @property
@@ -266,10 +276,20 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
 
     @retry.getter
     def retry(self):
+        """retry getter.
+
+        Returns:
+            int: Retry
+        """
         return self.__retry
 
     @retry.setter
     def retry(self, val):
+        """retry setter.
+
+        Args:
+            val (int): retry
+        """
         if val is None:
             raise TypeError("retry-value require not None")
         else:
@@ -359,9 +379,30 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
         self.__error_putter.put(e)
     
     def add_recv_block_listener(self, listener):
+        """Add receive-secs1-message-block-listener.
+
+        If listener-arguments is 1, put secs1-message-block.
+        If listener-arguments is 2, put secs1-message-block and self-communicator-instance.
+        secs1-message-block is instance of `secs.Secs1MessageBlock`.
+        self-communicator-instance is instance of `secs.AbstractSecsCommunicator`.
+
+        Args:
+            listener (function): receive-secs1-message-block-listener
+
+        Returns:
+            None
+        """
         self.__recv_block_lstnrs.append(listener)
     
     def remove_recv_block_listener(self, listener):
+        """Remove receive-secs1-message-block-listener.
+
+        Args:
+            listener (function): receive-secs1-message-block-listener
+
+        Returns:
+            None
+        """
         self.__recv_block_lstnrs.remove(listener)
     
     def _put_recv_block(self, block):
@@ -373,9 +414,30 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                     ls(block, self)
     
     def add_try_send_block_listener(self, listener):
+        """Add try-send-secs1-message-block-listener.
+
+        If listener-arguments is 1, put secs1-message-block.
+        If listener-arguments is 2, put secs1-message-block and self-communicator-instance.
+        secs1-message-block is instance of `secs.Secs1MessageBlock`.
+        self-communicator-instance is instance of `secs.AbstractSecsCommunicator`.
+
+        Args:
+            listener (function): try-send-secs1-message-block-listener
+
+        Returns:
+            None
+        """
         self.__try_send_block_lstnrs.append(listener)
     
     def remove_try_send_block_listener(self, listener):
+        """Remove try-send-secs1-message-block-listener.
+
+        Args:
+            listener (function): try-send-secs1-message-block-listener
+
+        Returns:
+            None
+        """
         self.__try_send_block_lstnrs.remove(listener)
     
     def _put_try_send_block(self, block):
@@ -387,9 +449,30 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                     ls(block, self)
     
     def add_sended_block_listener(self, listener):
+        """Add sended-secs1-message-block-listener.
+
+        If listener-arguments is 1, put secs1-message-block.
+        If listener-arguments is 2, put secs1-message-block and self-communicator-instance.
+        secs1-message-block is instance of `secs.Secs1MessageBlock`.
+        self-communicator-instance is instance of `secs.AbstractSecsCommunicator`.
+
+        Args:
+            listener (function): sended-secs1-message-block-listener
+
+        Returns:
+            None
+        """
         self.__sended_block_lstnrs.append(listener)
     
     def remove_sended_block_listener(self, listener):
+        """Remove sended-secs1-message-block-listener.
+
+        Args:
+            listener (function): sended-secs1-message-block-listener
+
+        Returns:
+            None
+        """
         self.__sended_block_lstnrs.remove(listener)
     
     def _put_sended_block(self, block):
@@ -401,9 +484,30 @@ class AbstractSecs1Communicator(secs.AbstractSecsCommunicator):
                     ls(block, self)
 
     def add_secs1_circuit_error_msg_listener(self, listener):
+        """Add SECS1-Circuit-error-msg-listener.
+
+        If listener-arguments is 1, put SECS1-Circuit-error-msg.
+        If listener-arguments is 2, put SECS1-Circuit-error-msg and self-communicator-instance.
+        SECS1-Circuit-error-msg type is `dict`.
+        self-communicator-instance is instance of `secs.AbstractSecsCommunicator`.
+
+        Args:
+            listener (function): SECS1-Circuit-error-msg-listener
+
+        Returns:
+            None
+        """
         self.__secs1_circuit_error_msg_lstnrs.append(listener)
 
     def remove_secs1_circuit_error_msg_listener(self, listener):
+        """Remove SECS1-Circuit-error-msg-listener.
+
+        Args:
+            listener (function): SECS1-Circuit-error-msg-listener
+
+        Returns:
+            None
+        """
         self.__secs1_circuit_error_msg_lstnrs.remove(listener)
 
     def _put_secs1_circuit_error_msg(self, msg_obj):

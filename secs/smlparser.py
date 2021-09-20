@@ -33,12 +33,11 @@ class SmlParser:
         Returns:
             tuple: (
                 int: Stream-Number,
-                int: Function-Number),
+                int: Function-Number,
                 bool: W-Bit,
                 secs.AbstractSecs2Body: secs2body or None
             )
         """
-
         s = sml_str.replace('\n', ' ').strip()
         if not s.endswith("."):
             raise SmlParseError("SML not endswith '.'")

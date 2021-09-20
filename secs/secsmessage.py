@@ -31,6 +31,11 @@ class SecsMessage:
 
     @strm.getter
     def strm(self):
+        """Stream-Number getter.
+
+        Returns:
+            int: Stream-Number
+        """
         return self.__strm
 
     def get_stream(self):
@@ -49,6 +54,11 @@ class SecsMessage:
 
     @func.getter
     def func(self):
+        """Function-Number getter.
+
+        Returns:
+            int: Function-Number
+        """
         return self.__func
 
     def get_function(self):
@@ -67,6 +77,11 @@ class SecsMessage:
 
     @wbit.getter
     def wbit(self):
+        """W-Bit getter
+
+        Returns:
+            bool: True if has W-Bit
+        """
         return self.__wbit
         
     def has_wbit(self):
@@ -85,6 +100,11 @@ class SecsMessage:
 
     @secs2body.getter
     def secs2body(self):
+        """Secs2Body getter.
+
+        Returns:
+            secs.AbstractSecs2Body: Secs2Body
+        """
         return self.__secs2body
 
     def get_secs2body(self):
@@ -120,6 +140,11 @@ class SecsMessage:
 
     @system_bytes.getter
     def system_bytes(self):
+        """ system-4-bytes getter.
+
+        Returns:
+            bytes: system-4-bytes, header10bytes[6:10]
+        """
         return (self._header10bytes())[6:10]
 
     @property
@@ -128,6 +153,11 @@ class SecsMessage:
 
     @header10bytes.getter
     def header10bytes(self):
+        """ header-10-bytes getter.
+
+        Returns:
+            bytes: header-10-bytes
+        """
         return self._header10bytes()
 
     def _header10bytes(self):

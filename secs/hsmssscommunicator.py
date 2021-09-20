@@ -504,11 +504,32 @@ class AbstractHsmsSsCommunicator(secs.AbstractSecsCommunicator):
             return self._hsmsss_comm
         
     def add_hsmsss_communicate_listener(self, listener):
+        """Add HSMS-SS-Communicate-state-change-listener.
+
+        If listener-arguments is 1, put HSMS-SS-Communicate-State.
+        If listener-arguments is 2, put HSMS-SS-Communicate-State and self-communicator-instance.
+        HSMS-SS-Communicate-State is instance of `secs.HsmsSsCommunicateState`.
+        self-communicator-instance is instance of `secs.AbstractSecsCommunicator`.
+
+        Args:
+            listener (function): HSMS-SS-Communicate-state-change-listener
+
+        Returns:
+            None
+        """
         with self._hsmsss_comm_lock:
             self._hsmsss_comm_lstnrs.append(listener)
             listener(self._hsmsss_comm, self)
 
     def remove_hsmsss_communicate_listener(self, listener):
+        """Remove HSMS-SS-Communicate-state-change-listener.
+
+        Args:
+            listener (function): HSMS-SS-Communicate-state-change-listener
+
+        Returns:
+            None
+        """
         with self._hsmsss_comm_lock:
             self._hsmsss_comm_lstnrs.remove(listener)
 

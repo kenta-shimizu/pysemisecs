@@ -1,7 +1,5 @@
 # pysemisecs
 
-buiding...
-
 ## Introduction
 
 This package is SEMI-SECS-communicate implementation on Python3.
@@ -44,7 +42,7 @@ This package is SEMI-SECS-communicate implementation on Python3.
         timeout_t3=45.0,
         timeout_t6=5.0,
         timeout_t7=10.0,
-        timeout_t8=6.0,
+        timeout_t8=5.0,
         gem_mdln='MDLN-A',
         gem_softrev='000001',
         gem_clock_type=secs.ClockType.A16,
@@ -64,7 +62,7 @@ This package is SEMI-SECS-communicate implementation on Python3.
         timeout_t3=45.0,
         timeout_t5=10.0,
         timeout_t6=5.0,
-        timeout_t8=6.0,
+        timeout_t8=5.0,
         gem_clock_type=secs.ClockType.A16,
         name='host-acitve-comm')
 
@@ -279,6 +277,8 @@ If T3-Timeout, raise `SecsWaitReplyMessageError`.
         '>.            '
     )
 ```
+
+Notes: Don't forget a period(.) of ends message.
 
 ## GEM
 
