@@ -1,11 +1,11 @@
-import datetime
-import struct
 import socket
-import inspect
 import re
+import threading
+import inspect
+import datetime
 import importlib
 import os
-import threading
+import struct
 
 
 class Secs2BodyParseError(Exception):
@@ -2704,6 +2704,9 @@ class HsmsSsConnection:
                         | heads[1] << 16
                         | heads[2] << 8
                         | heads[3]) - 10
+
+                if size < 0:
+                    raise HsmsSsCommunicatorError("Receive message size < 10")
 
                 while pos < size:
                     r = self.__bbqq.put_to_list(

@@ -224,6 +224,9 @@ class HsmsSsConnection:
                         | heads[2] << 8
                         | heads[3]) - 10
 
+                if size < 0:
+                    raise HsmsSsCommunicatorError("Receive message size < 10")
+
                 while pos < size:
                     r = self.__bbqq.put_to_list(
                         bodys, pos, size,

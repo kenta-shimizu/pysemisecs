@@ -1,12 +1,20 @@
 """Protocol Convert Example
 
+HSMS-SS <-> SECS-I converter example.
+
+Connection diagram
+
 HSMS-SS-ACTIVE <-> HSMS-SS-PASSIVE <-> SECS-I-on-TCP/IP <-> SECS-I-on-TCP/IP-Receiver
 (HOST)             (Convert-SIDE-A)    (Convert-SIDE-B)     (EQUIP)
 
-From HOST
-send S1F13, receive S1F14 (success sample)
-send S1F99, receive S1F0, S9F5 (failed sample)
-send S2F99, receive S0F0, S9F3 (failed sample)
+This example is
+
+From HOST to EQUIP via Protocol-converter.
+send S1F13, receive S1F14
+
+From EQUIP to HOST via Protocol-converter.
+receive S2F17, reply S2F18
+
 """
 
 import secs
@@ -77,14 +85,19 @@ class ProtocolConverter:
         self.__b.close()
 
 
+def _echo(v):
+    print(v)
+
 if __name__ == '__main__':
-    print("start")
+
+    _echo("start")
 
     side_a = secs.HsmsSsPassiveCommunicator(
         ip_address='127.0.0.1',
         port=5000,
         session_id=10,
-        is_equip=True)
+        is_equip=True,
+        timeout_rebind=1.0)
 
     side_b = secs.Secs1OnTcpIpCommunicator(
         ip_address='127.0.0.1',
@@ -103,7 +116,8 @@ if __name__ == '__main__':
             is_equip=True,
             is_master=True,
             gem_mdln='MDLN-A',
-            gem_softrev='000001') as equip:
+            gem_softrev='000001',
+            rebind=1.0) as equip:
             
             def _equip_recv(msg, comm):
                 if msg.device_id != comm.device_id:
@@ -132,23 +146,56 @@ if __name__ == '__main__':
                 port=5000,
                 session_id=10,
                 is_equip=False,
-                timeout_t5=1.0) as host:
+                timeout_t5=1.0,
+                gem_clock_type=secs.ClockType.A16,
+                name='HOST') as host:
 
-                def _recv_msg(msg):
-                    print('recv: ' + str(msg))
-
-                def _sended_msg(msg):
-                    print('sended: ' + str(msg))
+                def _host_recv(msg, comm):
+                    if msg.device_id != comm.device_id:
+                        comm.gem.s9f1(msg)
+                        return
+                    
+                    if msg.strm == 2:
+                        if msg.func == 17:
+                            if msg.wbit:
+                                comm.gem.s2f18_now(msg)
+                        else:
+                            if msg.wbit:
+                                comm.reply(msg, msg.strm, 0, False)
+                            comm.gem.s9f5(msg)
+                    else:
+                        if msg.wbit:
+                            comm.reply(msg, 0, 0, False)
+                        comm.gem.s9f3(msg)
                 
+                host.add_recv_primary_msg_listener(_host_recv)
+
+                def _hsmsss_state(state, comm):
+                    _echo(comm.name + ' state: ' + str(state))
+
+                def _recv_msg(msg, comm):
+                    _echo(comm.name + ' recv: ' + str(msg))
+
+                def _sended_msg(msg, comm):
+                    _echo(comm.name + ' sended: ' + str(msg))
+                
+                def _error(e, comm):
+                    _echo(comm.name + ' error: ' + str(e))
+                
+                host.add_hsmsss_communicate_listener(_hsmsss_state)
                 host.add_recv_all_msg_listener(_recv_msg)
                 host.add_sended_msg_listener(_sended_msg)
+                host.add_error_listener(_error)
 
                 host.open_and_wait_until_communicating()
                 
+                # from HOST to EQUIP send S1F13
                 host.gem.s1f13()
-                host.send(1, 99, True)
-                host.send(2, 99, True)
 
-                time.sleep(1.0)
+                time.sleep(0.1)
 
-    print("reach-end")
+                # from EQUIP to HOST send S2F17
+                equip.gem.s2f17()
+    
+    time.sleep(1.0)
+    _echo("reach-end")
