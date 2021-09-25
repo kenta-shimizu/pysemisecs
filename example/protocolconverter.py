@@ -195,6 +195,8 @@ if __name__ == '__main__':
                 
                 # from HOST to EQUIP send S1F13
                 host.gem.s1f13()
+
+                # from HOST to EQUIP send S1F17
                 host.gem.s1f17()
 
                 time.sleep(0.1)
