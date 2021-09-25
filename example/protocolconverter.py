@@ -11,6 +11,7 @@ This example is
 
 From HOST to EQUIP via Protocol-converter.
 send S1F13, receive S1F14
+send S1F17, receive S1F18
 
 From EQUIP to HOST via Protocol-converter.
 receive S2F17, reply S2F18
@@ -128,6 +129,9 @@ if __name__ == '__main__':
                     if msg.func == 13:
                         if msg.wbit:
                             comm.gem.s1f14(msg, secs.COMMACK.OK)
+                    elif msg.func == 17:
+                        if msg.wbit:
+                            comm.gem.s1f18(msg, secs.ONLACK.OK)
                     else:
                         if msg.wbit:
                             comm.reply(msg, msg.strm, 0, False)
@@ -191,6 +195,7 @@ if __name__ == '__main__':
                 
                 # from HOST to EQUIP send S1F13
                 host.gem.s1f13()
+                host.gem.s1f17()
 
                 time.sleep(0.1)
 
