@@ -1,9 +1,16 @@
 """SUMMARY
 How to
 
+To get HSMS-SS-PASSIVE-communicator, HsmsSsPassiveCommunicator()
+
 To get HSMS-SS-ACTIVE-communicator, HsmsSsActiveCommunicator()
 
-To get HSMS-SS-PASSIVE-communicator, HsmsSsActiveCommunicator()
+To get SECS-I-on-PySerial-communicator, Secs1OnPySerialCommunicator
+
+To get SECS-I-on-TCP/IP-communicator, Secs1OnTcpIpCommunicator
+
+To get SECS-I-on-TCP/IP-Receiver-communicator, Secs1OnTcpIpReceiverCommunicator
+
 """
 
 from secs.secs2body import Secs2BodyParseError, Secs2BodyBytesParseError
