@@ -5,11 +5,11 @@ To get HSMS-SS-PASSIVE-communicator, HsmsSsPassiveCommunicator()
 
 To get HSMS-SS-ACTIVE-communicator, HsmsSsActiveCommunicator()
 
-To get SECS-I-on-PySerial-communicator, Secs1OnPySerialCommunicator
+To get SECS-I-on-PySerial-communicator, Secs1OnPySerialCommunicator()
 
-To get SECS-I-on-TCP/IP-communicator, Secs1OnTcpIpCommunicator
+To get SECS-I-on-TCP/IP-communicator, Secs1OnTcpIpCommunicator()
 
-To get SECS-I-on-TCP/IP-Receiver-communicator, Secs1OnTcpIpReceiverCommunicator
+To get SECS-I-on-TCP/IP-Receiver-communicator, Secs1OnTcpIpReceiverCommunicator()
 
 """
 
