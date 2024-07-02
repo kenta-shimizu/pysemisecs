@@ -194,16 +194,33 @@ class AbstractSecs2Body:
 
     
 class Secs2AsciiBody(AbstractSecs2Body):
+    _hack = True  # XXX: able to work with a non-visible ASCII character
 
     def __init__(self, item_type, value):
+        if self._hack:
+            super(Secs2AsciiBody, self).__init__(item_type, value)  # Keep it as is
+            return
+
         super(Secs2AsciiBody, self).__init__(item_type, str(value))
 
     def _create_to_sml_value(self):
-        return len(self._value), ('"' + self._value + '"')
+        # ret = len(self._value), ('"' + self._value + '"')
+        s = self._value
+        if self._hack:
+            s = ''.join(['%c' % c for c in s])
+        return len(s), (f'"{s}"')
 
     def _create_to_bytes_value(self):
+        if self._hack:
+            s = self._value
+            if type(s) is str:
+                s = s.encode(encoding='ascii')
+            else:
+                s = bytes([c for c in s])
+            return s
+
         return self._value.encode(encoding='ascii')
-    
+
     @staticmethod
     def build(item_type, value):
         return Secs2AsciiBody(item_type, value)
