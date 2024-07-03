@@ -202,12 +202,30 @@ class AbstractSecs2Body:
 class Secs2AsciiBody(AbstractSecs2Body):
 
     def __init__(self, item_type, value):
+        self._extended = os.getenv('SECS_EXTENDED')
+
+        if self._extended:
+            super(Secs2AsciiBody, self).__init__(item_type, value)  # Keep it as is
+            return
+
         super(Secs2AsciiBody, self).__init__(item_type, str(value))
 
     def _create_to_sml_value(self):
-        return len(self._value), ('"' + self._value + '"')
+        # ret = len(self._value), ('"' + self._value + '"')
+        s = self._value
+        if self._extended:
+            s = ''.join(['%c' % c for c in s])
+        return len(s), (f'"{s}"')
 
     def _create_to_bytes_value(self):
+        if self._extended:
+            s = self._value
+            if type(s) is str:
+                s = s.encode(encoding='ascii')
+            else:
+                s = bytes([c for c in s])
+            return s
+
         return self._value.encode(encoding='ascii')
 
     @staticmethod
@@ -461,6 +479,11 @@ class Secs2BodyBuilder:
                 return tt[5](tt, vv), end_index
 
             elif tt[0] == 'A':
+                if os.getenv('SECS_EXTENDED'):
+                    v = bs[start_index:end_index]
+                    v = v.decode(encoding='ascii') if all([c <= 128 for c in v]) else bytes([c for c in v])
+                    return tt[5](tt, v), end_index
+
                 v = bs[start_index:end_index].decode(encoding='ascii')
                 return tt[5](tt, v), end_index
 
