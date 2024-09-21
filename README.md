@@ -221,12 +221,12 @@ If T3-Timeout, raise `SecsWaitReplyMessageError`.
     A
     >>> primary_msg.secs2body[2].value
     ON FIRE
-    >>> primary_msg.secs2body.get_value(2)
-    ON FIRE
     >>> primary_msg.secs2body[2][:]
     ON FIRE
     >>> primary_msg.secs2body[2][3:7]
     FIRE
+    >>> primary_msg.secs2body.get_value(2)
+    ON FIRE
     >>> len(primary_msg.secs2body)
     3
     >>> [v.value for v in primary_msg.secs2body]
